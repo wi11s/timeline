@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>World Timeline</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="map"></canvas>
+  <div id="hover"></div>
+  <article id="card" hidden>
+    <button id="close" aria-label="close">×</button>
+    <p class="meta"></p>
+    <h2></h2>
+    <a target="_blank" rel="noopener">wikipedia ↗</a>
+  </article>
+  <footer>
+    <output id="year"></output>
+    <div id="track" role="slider" tabindex="0" aria-label="year">
+      <div id="ticks"></div>
+      <div id="handle"></div>
+    </div>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>
