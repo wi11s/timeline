@@ -53,13 +53,13 @@ function userSteers() {
 }
 
 // --- guided stops ------------------------------------------------------------------------
-// playing in guided mode, the biggest moments get a stop: the camera flies in, playback
+// playing (the timeline or a focus), the biggest moments get a stop: the camera flies in, playback
 // all but halts while the note is read, then the camera returns and playback goes on
 
 const zoomFor = () => (globe.on ? 2.6 : 3.4);
 
 function guide(e) {
-  if (!state.guided || !state.playing || state.stop) return;
+  if (!state.playing || state.stop) return;
   if (performance.now() - state.userAt < 8000) return; // they're steering
   state.stop = { e, home: cameraNow(), left: STOP_MS };
   flyTo(e.lon, e.lat, Math.max(cameraNow().k, zoomFor()));
@@ -77,7 +77,7 @@ function stepStop(dt) {
 // each new story nudges the camera: the globe turns enough to bring its event well onto
 // the near side and a little further, the flat map pans it well into view, and both
 // zoom a touch: in for a story close to where the camera is, out for one far away (a
-// focus keeps its own zoom). it waits while the reader steers. guided adds the fly-ins (guide)
+// focus keeps its own zoom). it waits while the reader steers. the big moments get a fly-in (guide)
 function drift(e) {
   if (!state.playing || state.stop || state.flight) return;
   if (performance.now() - state.userAt < 8000) return; // they're steering
@@ -97,14 +97,7 @@ function drift(e) {
   flyTo(lon, lat, k, 1400, 0.25);
 }
 
-function setGuided(on) {
-  state.guided = on;
-  $("guided").setAttribute("aria-pressed", on);
-  if (!on && state.stop) state.stop.left = 0;
-  try { localStorage.setItem("guided", on ? "on" : "off"); } catch {}
-}
-$("guided").onclick = () => setGuided(!state.guided);
-try { if (localStorage.getItem("guided") === "off") setGuided(false); } catch {}
+try { localStorage.removeItem("guided"); } catch {} // the old guided toggle's setting
 
 // --- focuses -----------------------------------------------------------------------------
 

@@ -214,7 +214,7 @@ body.globe { background: var(--space); }
 }
 #close:hover { color: var(--ink); }
 
-/* --- the dock: play, the year, the timeline, speed and guided ------------------------ */
+/* --- the dock: play, the year, the timeline, speed ------------------------------------ */
 footer {
   position: fixed; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right));
   bottom: max(16px, env(safe-area-inset-bottom));
@@ -272,11 +272,6 @@ footer {
 #options button:hover { background: var(--hover); }
 #options button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #speed { min-width: 46px; }
-#guided svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.3; }
-#options #guided[aria-pressed="true"] {
-  color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
 
 svg.kind {
   width: 14px; height: 14px; margin: 0 5px -2px 0; fill: none; stroke: var(--accent);
@@ -316,8 +311,6 @@ svg.kind.k-art { stroke: var(--k-art); }
   #year small { font-size: 17px; }
   #options { margin-left: auto; }
   #options button { height: 38px; }
-  #options #guided { width: 38px; padding: 0; }
-  #options #guided span { display: none; }
   #track { order: 1; flex-basis: 100%; min-height: 52px; } /* last, full width: a comfortable thumb target */
   #ticks .minor { display: none; }
 

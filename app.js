@@ -44,7 +44,6 @@ const state = {
   story: null,          // the reel's event being told in the card
   queue: [],            // events waiting for their turn
   ease: 1,              // playback slows while there's something to read
-  guided: true,         // guided playback: fly to the biggest moments (story.js)
   stop: null,           // the guided stop in progress
   focus: null,          // the focus being played (story.js)
   flight: null,         // a camera flight (story.js)
