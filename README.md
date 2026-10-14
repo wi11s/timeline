@@ -86,6 +86,9 @@ pipeline/corrections.py       fixes to the border source, applied by borders.py
 pipeline/physical.py          builds data/physical/
 pipeline/validate.py          checks both event files
 vercel.json .vercelignore     static hosting config
+robots.txt sitemap.xml        for search engines, along with the meta tags in index.html
+og-image.jpg favicon.svg      the link-preview image and icons. regenerate og-image.jpg
+apple-touch-icon.png          if the map's look changes a lot
 ```
 
 `app.js` is organised in sections, top to bottom:

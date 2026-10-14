@@ -5,14 +5,53 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#dae3df" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#172025" media="(prefers-color-scheme: dark)">
-  <title>World Timeline</title>
-  <meta name="description" content="An interactive map of human history: borders, wars and major events, scrubbed through time.">
+  <title>World Timeline: an interactive map of history, 5000 BCE to today</title>
+  <meta name="description" content="Watch 7,000 years of history unfold on an interactive map: empires rise and fall, borders shift, and over 5,000 wars, battles, treaties and discoveries appear as they happen, from 5000 BCE to today.">
+  <link rel="canonical" href="https://worldtimeline.app/">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="World Timeline">
+  <meta property="og:url" content="https://worldtimeline.app/">
+  <meta property="og:title" content="World Timeline: an interactive map of history">
+  <meta property="og:description" content="Watch 7,000 years of history unfold on an interactive map: empires rise and fall, borders shift, and over 5,000 wars, battles, treaties and discoveries appear as they happen, from 5000 BCE to today.">
+  <meta property="og:image" content="https://worldtimeline.app/og-image.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="A world map in the style of an old atlas, showing the empires of 1600 with events marked across Europe and Asia">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "World Timeline",
+    "url": "https://worldtimeline.app/",
+    "description": "Watch 7,000 years of history unfold on an interactive map: empires rise and fall, borders shift, and over 5,000 wars, battles, treaties and discoveries appear as they happen, from 5000 BCE to today.",
+    "image": "https://worldtimeline.app/og-image.jpg",
+    "applicationCategory": "EducationalApplication",
+    "operatingSystem": "Any (web browser)",
+    "isAccessibleForFree": true,
+    "inLanguage": "en",
+    "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "codeRepository": "https://github.com/wi11s/timeline"
+  }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..600;1,400..500&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- the map is a canvas, so this is what search engines and screen readers read -->
+  <header class="sr-only">
+    <h1>World Timeline</h1>
+    <p>An interactive map of world history from 5000 BCE to today. Press play to watch empires rise and fall and borders shift, or scrub the timeline to any year. Over 5,000 wars, battles, treaties, revolutions, disasters and discoveries from Wikipedia and Wikidata appear on the map as they happen, and every territory and event opens a summary. Switch to a 3D globe at any time.</p>
+    <p>Jump to a moment: <a href="#-2560">the Great Pyramid</a>, <a href="#-323">the death of Alexander the Great</a>, <a href="#476">the fall of Rome</a>, <a href="#1206">the Mongol Empire</a>, <a href="#1453">the fall of Constantinople</a>, <a href="#1492">Columbus in the Americas</a>, <a href="#1789">the French Revolution</a>, <a href="#1914">the First World War</a>, <a href="#1945">the end of the Second World War</a>, <a href="#1991">the end of the Soviet Union</a>.</p>
+  </header>
+  <noscript><p class="noscript">World Timeline is an interactive map and needs JavaScript to run.</p></noscript>
   <canvas id="globe"></canvas>
   <canvas id="map"></canvas>
   <div id="notes"></div>

@@ -19,6 +19,11 @@
   }
 }
 * { box-sizing: border-box; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.noscript { position: fixed; inset: 40% 16px auto; text-align: center; font-size: 18px; }
 html, body { margin: 0; height: 100%; overflow: hidden; }
 body {
   background: var(--bg); color: var(--ink);
