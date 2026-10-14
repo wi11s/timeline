@@ -2,8 +2,8 @@
 :root {
   --bg: #dae3df; --ink: #2b261e; --muted: #7c7466;
   --line: rgba(74, 58, 38, .3); --land: #ece2cc; --accent: #1f4e9c;
-  --coast: rgba(36, 82, 128, .42); --halo: rgba(250, 245, 235, .65);
-  --panel: rgba(248, 243, 232, .95);
+  --coast: rgba(36, 82, 128, .42); --river: rgba(36, 82, 128, .6); --halo: rgba(250, 245, 235, .65);
+  --panel: rgba(248, 243, 232, .95); --space: #ebe5d7;
   --realm-0: #e7cc9f; --realm-1: #ddbcaa; --realm-2: #c9d3a9; --realm-3: #bfd0cc; --realm-4: #e5d79f;
   --realm-5: #d6c4d4; --realm-6: #cfbd9a; --realm-7: #e7c0a3; --realm-8: #bacbb0; --realm-9: #d9c8a6;
   --serif: "EB Garamond", "Iowan Old Style", Georgia, serif;
@@ -12,8 +12,8 @@
   :root {
     --bg: #172025; --ink: #ece2cd; --muted: #928a7a;
     --line: rgba(236, 226, 205, .2); --land: #2e2a22; --accent: #86abe6;
-    --coast: rgba(150, 186, 220, .3); --halo: rgba(27, 25, 21, .6);
-    --panel: rgba(31, 28, 23, .95);
+    --coast: rgba(150, 186, 220, .3); --river: rgba(150, 186, 220, .5); --halo: rgba(27, 25, 21, .6);
+    --panel: rgba(31, 28, 23, .95); --space: #12110f;
     --realm-0: #5b4a30; --realm-1: #59413b; --realm-2: #46503a; --realm-3: #3b4d4c; --realm-4: #57522f;
     --realm-5: #4c4150; --realm-6: #4e4431; --realm-7: #5c4433; --realm-8: #3d4d3d; --realm-9: #4f4637;
   }
@@ -41,22 +41,34 @@ body::after {
 @media (prefers-color-scheme: dark) {
   body::after { opacity: .35; }
 }
-#notes, #hover, #contribute, #card, footer { z-index: 2; }
+#notes, #hover, #top, #card, footer { z-index: 2; }
+
+/* the globe (globe.js) is drawn under the map canvas, which carries its labels and pins */
+#globe { display: none; }
+body.globe #globe { display: block; }
+body.globe { background: var(--space); }
+body.globe footer { background: linear-gradient(transparent, var(--space) 45%); }
 
 #hover {
   position: fixed; top: 16px; left: 18px; pointer-events: none;
   font-size: 16px; font-style: italic; color: var(--muted);
 }
 
-#contribute {
-  position: fixed; top: max(14px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); height: 34px; padding: 0 14px;
-  display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 3px;
-  background: var(--panel); color: var(--ink); text-decoration: none;
-  font-size: 13px; letter-spacing: .08em; text-transform: uppercase;
+#top {
+  position: fixed; top: max(14px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right));
+  display: flex; gap: 8px;
 }
-#contribute:hover { border-color: var(--muted); }
-#contribute:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-#contribute svg { width: 15px; height: 15px; fill: currentColor; }
+#top > * {
+  height: 34px; padding: 0 14px; display: flex; align-items: center; gap: 8px;
+  border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink);
+  text-decoration: none; font: 13px/1 var(--serif); letter-spacing: .08em; text-transform: uppercase; cursor: pointer;
+}
+#top > *:hover { border-color: var(--muted); }
+#top > *:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#top > [hidden] { display: none; }
+#top svg { width: 15px; height: 15px; fill: currentColor; }
+#globe-toggle svg { fill: none; stroke: currentColor; stroke-width: 1.2; }
+#globe-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 
 #card {
   -webkit-user-select: text; user-select: text;
@@ -80,6 +92,16 @@ body::after {
 #card .desc.loading { color: var(--muted); font-style: italic; }
 #card .wiki { color: var(--accent); text-decoration: none; font-size: 15px; font-style: italic; }
 #card .wiki:hover { text-decoration: underline; }
+#card .related-wrap { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+#card .related-title { margin: 0 0 4px; color: var(--muted); font-size: 13px; font-style: italic; }
+#card .related { margin: 0; padding: 0; list-style: none; }
+#card .related button {
+  display: block; width: 100%; padding: 4px 0; border: 0; background: none; text-align: left;
+  color: var(--ink); font: 15px/1.3 var(--serif); cursor: pointer;
+}
+#card .related button:hover { color: var(--accent); }
+#card .related small { color: var(--muted); font-style: italic; font-size: 13px; margin-right: 4px; font-feature-settings: "onum"; }
+
 #close {
   position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border: 0; border-radius: 50%;
   background: var(--panel); color: var(--muted); font: 20px/1 var(--serif); cursor: pointer;
@@ -118,6 +140,7 @@ footer {
   position: absolute; bottom: -6px; font-size: 13px; font-style: italic; color: var(--muted);
   transform: translateX(-50%); font-feature-settings: "onum";
 }
+#ticks .era.start { transform: none; }
 #handle {
   position: absolute; top: 5px; bottom: 5px; width: 2px; margin-left: -1px; background: var(--accent);
 }
@@ -141,8 +164,8 @@ footer {
   padding: 6px 12px 8px; text-align: left; cursor: pointer; pointer-events: auto;
   background: var(--panel); color: var(--ink); border: 1px solid var(--line);
   border-top: 2px solid var(--accent); border-radius: 3px;
-  font: inherit; box-shadow: 0 6px 18px rgba(60, 40, 15, .12);
-  animation: rise .35s cubic-bezier(.2, .9, .3, 1.2) both;
+  font: inherit; box-shadow: 0 3px 10px rgba(60, 40, 15, .12);
+  animation: appear .3s ease-out both;
 }
 .note .leader {
   position: absolute; left: 0; top: 0; height: 1px; background: var(--accent); opacity: .5;
@@ -151,7 +174,8 @@ footer {
 .note.paused .ping, .note.paused .bubble { animation-play-state: paused; }
 .note .bubble small { display: block; color: var(--muted); font-size: 13px; font-style: italic; }
 .note .bubble b { display: block; font-size: 16px; font-weight: 500; line-height: 1.2; }
-@keyframes rise { from { opacity: 0; translate: 0 6px; } }
+/* notes grow from their centre, so they never poke past where they'll settle */
+@keyframes appear { from { opacity: 0; scale: .96; } }
 @media (prefers-reduced-motion: reduce) {
   .note .ping { animation: none; opacity: .6; }
   .note .bubble { animation: none; }
@@ -165,7 +189,7 @@ footer {
   #controls button { height: 40px; min-width: 40px; }
   #controls #speed { min-width: 52px; border-radius: 20px; }
   #hover { display: none; } /* hover names don't exist on touch */
-  #contribute { height: 32px; padding: 0 10px; font-size: 12px; }
+  #top > * { height: 32px; padding: 0 10px; font-size: 12px; }
   #card { top: auto; bottom: 150px; left: 12px; right: 12px; width: auto; max-height: 55vh; max-height: 55dvh; }
   #card img { max-height: 150px; }
   #card h2 { font-size: 21px; }

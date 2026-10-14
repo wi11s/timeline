@@ -1,6 +1,6 @@
 # world timeline
 
-an interactive map of human history: borders, wars and major events, scrubbed through time. ~5,000 events, 50+ border snapshots from 123,000 bce to today, no dependencies and no build step.
+an interactive map of human history: borders, wars and major events, scrubbed through time. ~5,000 events and 54 border snapshots from 5000 bce to today, no dependencies and no build step.
 
 it's open source and contributions are very welcome, whether that's fixing a date, adding an event, or working on the map itself. you don't need to know javascript to help.
 
@@ -16,7 +16,7 @@ python3 -m http.server     # then open http://localhost:8000
 
 any static file server works (`npx serve` too). there's nothing to install: the viewer is plain html, css and javascript, and the python scripts only use the standard library.
 
-**using it:** press play (or space) to watch history unfold; the button next to it sets the speed. drag or scroll over the timeline to scrub, or use ←/→ (shift jumps between border snapshots). pinch or use a mouse wheel to zoom the map, double-click to zoom in, and drag (or two-finger scroll on a trackpad) to pan. click a pin or a notification for a summary and photo from wikipedia. the url holds the year, so you can link to a moment: `/#1453`, `/#-500`.
+**using it:** press play (or space) to watch history unfold; the button next to it sets the speed. drag or scroll over the timeline to scrub, or use ←/→ (shift jumps between border snapshots). pinch or use a mouse wheel to zoom the map, double-click to zoom in, and drag (or two-finger scroll on a trackpad) to pan. the globe button (or `g`) switches to a 3d globe and back, keeping the same place in view. click a pin or a notification for a summary and photo from wikipedia, or click a territory to see what it was and the biggest events inside its borders. the url holds the year, so you can link to a moment: `/#1453`, `/#-500`.
 
 ## ways to help
 
@@ -74,27 +74,34 @@ small, focused prs are easiest to review. one event or one fix per pr is great.
 
 ```
 index.html style.css app.js   the viewer
+globe.js                      the 3d globe (webgl2, no library)
 data/events.json              hand-curated events (edit these)
 data/events-wikidata.json     events generated from wikidata (don't edit, regenerate)
 data/borders/<year>.json      border snapshots, generated from historical-basemaps
 data/borders/index.json       the list of snapshot years
+data/physical/                shaded relief, rivers, lakes, mountain and desert names (natural earth)
 pipeline/wikidata.py          builds data/events-wikidata.json
 pipeline/borders.py           builds data/borders/
 pipeline/corrections.py       fixes to the border source, applied by borders.py
+pipeline/physical.py          builds data/physical/
 pipeline/validate.py          checks both event files
 vercel.json .vercelignore     static hosting config
 ```
 
 `app.js` is organised in sections, top to bottom:
 
-- **projection and time scale.** the map uses the equal earth projection. the timeline is logarithmic in years before present, so recent centuries get more room than prehistory.
+- **projection and time scale.** the map uses the equal earth projection. the timeline is linear from 5000 bce, but playback speed, how long pins linger and scrolling to scrub all run on a log scale of years before present, so playback sweeps through antiquity and slows down for the densely recorded modern era.
 - **data.** loads border snapshots on demand and merges the two event files, ranking events by how many wikipedia language editions cover them.
 - **view.** smooth zoom, pinch, panning with momentum. only realms on screen are drawn, and the water lines (the slowest part) wait until the map stops moving.
 - **border transitions.** when the snapshot changes, both maps are rasterised and each changed pixel flips once the new owner's "front" reaches it, so empires visibly grow and shrink instead of popping.
 - **rendering.** an old-atlas style: realm tints, water lines along coasts, ocean names, labels sized to their realm. everything except the pins is cached between frames.
-- **notifications.** big events pop a note as the timeline passes them. notes are laid out to avoid each other and the controls.
+- **physical geography.** shaded relief blended into the realm tints (soft-light, so flat land is untouched), rivers and lakes that fill in as you zoom, and mountain ranges and deserts lettered along their length. it loads after the map and works the same in every year.
+- **notifications.** big events pop a note as the timeline passes them, laid out to avoid each other and the controls.
+- **territories.** hovering outlines a territory and clicking opens its card. realm names come from the border data, so the wikipedia article is found by title, then by a cautious search. when it picks wrong or finds nothing, add the name to `REALM_ARTICLES` in `app.js`.
 - **timeline and playback.**
 - **map interaction and the event card.** descriptions and photos come from wikipedia's page summary api, fetched in the browser.
+
+`globe.js` is the 3d view. there's no 3d library: a webgl2 fragment shader works out which longitude and latitude each pixel of the disc is looking at, and samples a plain longitude/latitude picture of the map, painted in the same atlas style whenever the borders change (old and new cross-fade). labels, pins and notes are still drawn by `app.js` on the 2d canvas on top, placed with `globeScreen()` instead of the flat projection, so everything else works the same in both views.
 
 colours, the realm palette and typography are css variables at the top of `style.css`.
 
@@ -141,6 +148,7 @@ regenerates the data files. you only need this when refreshing from the sources 
 ```
 python3 pipeline/wikidata.py  # queries wikidata, cached in .cache/wikidata/ (--refresh refetches)
 python3 pipeline/borders.py   # clones historical-basemaps into .cache/, writes data/borders/
+python3 pipeline/physical.py  # downloads natural earth into .cache/, writes data/physical/ (relief for both views)
 python3 pipeline/validate.py  # checks both event files
 ```
 
@@ -152,4 +160,4 @@ it's a static site, so any static host works. on vercel, import the repo and acc
 
 ## license
 
-[GPL-3.0](LICENSE), because the border data from [aourednik/historical-basemaps](https://github.com/aourednik/historical-basemaps) is GPL-3.0. by contributing you agree your contribution is released under the same license. event data from [wikidata](https://www.wikidata.org) is CC0; descriptions and photos are loaded live from wikipedia and wikimedia commons under their own licenses.
+[GPL-3.0](LICENSE), because the border data from [aourednik/historical-basemaps](https://github.com/aourednik/historical-basemaps) is GPL-3.0. by contributing you agree your contribution is released under the same license. event data from [wikidata](https://www.wikidata.org) is CC0, and relief, rivers, lakes and region names come from [natural earth](https://www.naturalearthdata.com) (public domain); descriptions and photos are loaded live from wikipedia and wikimedia commons under their own licenses.

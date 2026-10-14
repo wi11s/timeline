@@ -1,9 +1,9 @@
 // world timeline: equal earth map + log-scale timeline. no dependencies.
 
-const MIN_YEAR = -123000, MAX_YEAR = 2025, PRESENT = 2050;
-const PLAY_RATE = 1 / 150;   // timeline fraction per second at 1×
+const MIN_YEAR = -5000, MAX_YEAR = 2025, PRESENT = 2050;
+const PACE = 0.055;          // playback, in log-years per second at 1× (see the time scale)
 const SPEEDS = [0.5, 1, 2, 4];
-const LINGER = 0.02;         // timeline fraction a pin stays (fading) after its event ends
+const LINGER = 0.16;         // how long a pin stays (fading) after its event ends, in log-years
 const NOTIFY_WEIGHT = 80;    // sitelinks an event needs to pop a notification
 const NOTE_MS = 4500;
 const TRANSITION_MS = 900, FEATHER = 6;
@@ -42,9 +42,15 @@ const state = {
   speed: 1,
   notes: [],
   selected: null,       // event shown in the card
+  selectedRealm: null,  // or territory
+  hoverRealm: null,
+  hoverLabel: null,
+  labelHits: [],        // realm names drawn last render: { box, f }
   transition: null,
 };
 const view = { k: 1, x: 0, y: 0 };
+// the 3d globe (globe.js): centre longitude and latitude in degrees, and zoom
+const globe = { on: false, lon: 10, lat: 25, k: 1, goalK: null };
 
 // --- projection (equal earth, šavrič et al. 2018) ---------------------------
 
@@ -61,12 +67,17 @@ function project(lon, lat) {
 // (antarctica isn't drawn)
 const HALF_W = project(180, 0)[0], TOP = project(0, 84)[1], BOTTOM = project(0, -57)[1];
 
-// --- time scale: log of years-before-PRESENT --------------------------------
+// --- time scale -------------------------------------------------------------
+// the timeline is linear. everything that should feel the same in any era (playback
+// speed, how long pins linger, scrolling to scrub) runs in "log-years" instead: the
+// log of years before PRESENT, in which a century of antiquity and a decade of the
+// 20th century are about the same size, matching how densely history is recorded
 
 const lg = (y) => Math.log(PRESENT - y);
-const toPos = (y) => (lg(MIN_YEAR) - lg(y)) / (lg(MIN_YEAR) - lg(MAX_YEAR));
-const toYear = (p) => PRESENT - Math.exp(lg(MIN_YEAR) - p * (lg(MIN_YEAR) - lg(MAX_YEAR)));
-const stepAt = (y) => (y < -10000 ? 1000 : y < -3000 ? 100 : y < 0 ? 10 : 1);
+const toPos = (y) => (y - MIN_YEAR) / (MAX_YEAR - MIN_YEAR);
+const toYear = (p) => MIN_YEAR + p * (MAX_YEAR - MIN_YEAR);
+const lgShift = (y, d) => PRESENT - (PRESENT - y) * Math.exp(-d); // d log-years later
+const stepAt = (y) => (y < 0 ? 10 : 1);
 
 function roundYear(y) {
   const step = stepAt(y), r = Math.round(y / step) * step;
@@ -85,10 +96,23 @@ function hash(name) {
 function prepare(geojson) {
   const feats = geojson.features.map(({ properties: p, geometry }) => {
     const path = new Path2D(), box = [Infinity, Infinity, -Infinity, -Infinity];
+    const geo = new Path2D(), geoBox = [Infinity, Infinity, -Infinity, -Infinity], rings = []; // for the globe
     let best = { area: 0 };
     for (const poly of geometry.coordinates) {
       poly.forEach((ring, i) => {
-        let area = 0, cx = 0, cy = 0, prev = null;
+        let area = 0, cx = 0, cy = 0, prev = null, glon = 0, glat = 0;
+        const flat = new Float32Array(ring.length * 2);
+        ring.forEach(([lon, lat], j) => {
+          flat[2 * j] = lon;
+          flat[2 * j + 1] = lat;
+          j ? geo.lineTo(lon, -lat) : geo.moveTo(lon, -lat);
+          geoBox[0] = Math.min(geoBox[0], lon); geoBox[1] = Math.min(geoBox[1], -lat);
+          geoBox[2] = Math.max(geoBox[2], lon); geoBox[3] = Math.max(geoBox[3], -lat);
+          glon += lon;
+          glat += lat;
+        });
+        geo.closePath();
+        rings.push(flat);
         for (const [lon, lat] of ring) {
           const pt = project(lon, lat);
           box[0] = Math.min(box[0], pt[0]); box[1] = Math.min(box[1], pt[1]);
@@ -102,14 +126,18 @@ function prepare(geojson) {
         }
         path.closePath();
         if (i === 0 && Math.abs(area) > best.area) {
-          best = { area: Math.abs(area) / 2, x: cx / (3 * area), y: cy / (3 * area) };
+          best = { area: Math.abs(area) / 2, x: cx / (3 * area), y: cy / (3 * area), geo: [glon / ring.length, glat / ring.length] };
         }
       });
     }
-    return { name: p.name, path, box, label: best, realm: p.name ? hash(p.name) % REALMS : null };
+    return { name: p.name, subject: p.subject, path, box, geo, geoBox, rings, label: best, realm: p.name ? hash(p.name) % REALMS : null };
   });
   feats.coast = new Path2D(); // every outline at once, for the water lines
-  for (const f of feats) feats.coast.addPath(f.path);
+  feats.geoCoast = new Path2D();
+  for (const f of feats) {
+    feats.coast.addPath(f.path);
+    feats.geoCoast.addPath(f.geo);
+  }
   return feats;
 }
 
@@ -133,7 +161,7 @@ function mergeEvents(curated, wikidata) {
   const events = [...curated, ...wikidata.filter((e) => !e.dup)];
   for (const e of events) {
     e.weight = e.sitelinks ?? { 1: 150, 2: 70, 3: 30 }[e.importance];
-    e.endPos = toPos(e.end ?? e.start);
+    e.endLg = lg(e.end ?? e.start);
   }
   return events.sort((a, b) => b.weight - a.weight);
 }
@@ -158,6 +186,7 @@ function resize() {
   if (minZoom < 1 && view.k === 1 && view.x === 0) view.x = -project(20, 0)[0] * s; // centre on europe/africa
   clampView(view);
   layerDirty = true;
+  coastAt = null;
   viewChanged();
 }
 
@@ -176,6 +205,13 @@ function viewChanged() {
 }
 
 function zoomAt(sx, sy, factor, animate = true) {
+  if (globe.on) {
+    const k = clamp((globe.goalK ?? globe.k) * factor, 0.6, MAX_ZOOM);
+    fling = null;
+    if (animate) globe.goalK = k;
+    else { globe.k = k; globe.goalK = null; }
+    return viewChanged();
+  }
   const g = { ...(goal ?? view) };
   const k = clamp(g.k * factor, minZoom, MAX_ZOOM), f = k / g.k;
   const ox = sx - base.x, oy = sy - base.y;
@@ -191,6 +227,12 @@ function zoomAt(sx, sy, factor, animate = true) {
 }
 
 function panBy(dx, dy) {
+  if (globe.on) { // drag the surface: a pixel at the centre is 1/radius radians
+    const r = globeRadius(), lat0 = globe.lat;
+    globe.lon = ((globe.lon - (dx / r) * (180 / Math.PI) + 540) % 360) - 180;
+    globe.lat = clamp(globe.lat + (dy / r) * (180 / Math.PI), -80, 80);
+    return viewChanged();
+  }
   view.x += dx;
   view.y += dy;
   clampView(view);
@@ -198,6 +240,11 @@ function panBy(dx, dy) {
 }
 
 function stepView(dt) {
+  if (globe.on && globe.goalK) {
+    globe.k = Math.exp(Math.log(globe.k) + (Math.log(globe.goalK) - Math.log(globe.k)) * (1 - Math.exp(-dt * 14)));
+    if (Math.abs(globe.goalK / globe.k - 1) < 1e-3) { globe.k = globe.goalK; globe.goalK = null; }
+    viewChanged();
+  }
   if (goal) {
     const a = 1 - Math.exp(-dt * 14);
     view.k = Math.exp(Math.log(view.k) + (Math.log(goal.k) - Math.log(view.k)) * a);
@@ -215,16 +262,19 @@ function stepView(dt) {
     const decay = Math.exp(-dt * 4);
     fling.vx *= decay;
     fling.vy *= decay;
-    const stuck = view.x === x && view.y === y;
+    const stuck = !globe.on && view.x === x && view.y === y;
     if (stuck || Math.hypot(fling.vx, fling.vy) < 15) fling = null;
   }
-  return !!(goal || fling);
+  return !!(goal || fling || globe.goalK);
 }
 
 function transform() {
   const s = base.s * view.k;
   return [s * dpr, 0, 0, s * dpr, (base.x + view.x) * dpr, (base.y + view.y) * dpr];
 }
+// where a place is on screen, or null where the globe's far side hides it
+const screenAt = (lon, lat, edge) => (globe.on ? globeScreen(lon, lat, edge) : toScreen(project(lon, lat)));
+const pixelsPerUnit = () => (globe.on ? globeRadius() : base.s * view.k); // per projected unit near the centre
 const toScreen = ([px, py]) => {
   const s = base.s * view.k;
   return [base.x + view.x + px * s, base.y + view.y + py * s];
@@ -326,7 +376,7 @@ function startTransition(from, to) {
   flood(sweep, false);
 
   const fast = state.playing ? 1 / Math.sqrt(state.speed) : 1;
-  if (!sameView(coastView, view) || !coastLines) renderCoast(from); // the water lines underneath
+  if (!coastAt || coastAt.view.k !== view.k || !coastCovers()) renderCoast(from); // the water lines underneath
   state.transition = {
     a, b, dist, changed: Int32Array.from(changed), maxD,
     out: new ImageData(b.slice(), W, H),
@@ -354,10 +404,14 @@ const progress = (tr) => ease(Math.min(1, (performance.now() - tr.start) / tr.du
 function showBorders(feats) {
   const tr = state.transition;
   // scrubbing fast through many snapshots: just swap, each transition costs a few frames
-  if (tr && performance.now() - tr.start < 120) state.transition = null;
+  if (globe.on) state.transition = null;
+  else if (tr && performance.now() - tr.start < 120) state.transition = null;
   else if (state.shown && state.shown !== feats) startTransition(state.shown, feats);
   state.shown = feats;
+  state.hoverRealm = state.hoverLabel = null;
+  if (state.selectedRealm) state.selectedRealm = feats.find((f) => f.name === state.selectedRealm.name) ?? null;
   layerDirty = true;
+  globeStale();
   invalidate();
 }
 
@@ -367,10 +421,12 @@ const dark = matchMedia("(prefers-color-scheme: dark)");
 let colors = {};
 function readColors() {
   const css = getComputedStyle(document.documentElement);
-  for (const k of ["bg", "land", "line", "ink", "accent", "coast", "halo"]) colors[k] = css.getPropertyValue(`--${k}`).trim();
+  for (const k of ["bg", "land", "line", "ink", "accent", "coast", "river", "halo"]) colors[k] = css.getPropertyValue(`--${k}`).trim();
   colors.realms = Array.from({ length: REALMS }, (_, i) => css.getPropertyValue(`--realm-${i}`).trim());
+  colors.space = css.getPropertyValue("--space").trim();
   layerDirty = true;
-  coastView = null;
+  if (typeof globeStale === "function") globeStale(true);
+  coastAt = null;
 }
 
 let frame = 0, last = 0;
@@ -384,17 +440,146 @@ function tick(now) {
   let busy = stepPlay(dt);
   busy = stepView(dt) || busy;
   if (state.transition && progress(state.transition) >= 1) state.transition = null;
-  busy ||= !!state.transition;
+  busy ||= !!state.transition || (globe.on && globeBusy());
   draw();
   if (busy) invalidate();
 }
 
 function visibleEvents() {
-  const { year, pos } = state;
-  return state.events.filter((e) => e.start <= year && e.endPos >= pos - LINGER);
+  const now = lg(state.year);
+  return state.events.filter((e) => e.start <= state.year && e.start >= MIN_YEAR && e.endLg - now <= LINGER);
 }
 
 const fillOf = (f) => (f.realm === null ? colors.land : colors.realms[f.realm]);
+
+// --- physical geography ---------------------------------------------------------------
+// shaded relief, rivers, lakes and the names of mountain ranges and deserts, from
+// natural earth (see pipeline/physical.py). they load after the map and appear when ready
+
+const physical = { relief: null, reliefGlobe: null, rivers: [], lakes: [], regions: [] };
+const zoomLevel = () => pixelsPerUnit() / 260; // 1 = the whole world on a laptop screen
+
+function boxOf(flat) {
+  const box = [Infinity, Infinity, -Infinity, -Infinity], path = new Path2D(), geo = new Path2D();
+  for (let i = 0; i < flat.length; i += 2) {
+    const [x, y] = project(flat[i], flat[i + 1]);
+    i ? path.lineTo(x, y) : path.moveTo(x, y);
+    i ? geo.lineTo(flat[i], -flat[i + 1]) : geo.moveTo(flat[i], -flat[i + 1]);
+    box[0] = Math.min(box[0], x); box[1] = Math.min(box[1], y);
+    box[2] = Math.max(box[2], x); box[3] = Math.max(box[3], y);
+  }
+  return { path, box, geo };
+}
+
+async function loadPhysical() {
+  const json = (name) => fetch(`data/physical/${name}.json`).then((r) => r.json());
+  const [rivers, lakes, regions] = await Promise.all([json("rivers"), json("lakes"), json("regions")]);
+  physical.rivers = rivers.map(([rank, name, pts]) => ({ rank, name, ...boxOf(pts) }));
+  physical.lakes = lakes.map(([rank, pts]) => {
+    const l = { rank, ...boxOf(pts) };
+    l.path.closePath();
+    l.geo.closePath();
+    return l;
+  });
+  // natural earth's label levels, roughly: 2 shows the whole world, 5 a single country
+  physical.regions = regions.map(([kind, name, level, [a, b]]) => ({ kind, name, zoom: 2 ** (level - 2.6), ga: a, gb: b }));
+  layerDirty = true;
+  invalidate();
+  const img = new Image();
+  img.src = "data/physical/relief.png";
+  await img.decode();
+  physical.relief = img;
+  layerDirty = true;
+  coastAt = null;
+  invalidate();
+  const flat = new Image(); // the same, in plain longitude and latitude, for the globe
+  flat.src = "data/physical/relief-globe.png";
+  await flat.decode();
+  physical.reliefGlobe = flat;
+  globeStale();
+}
+
+// the relief is a soft-light layer, neutral grey where flat, so it shades the
+// realm tints without tinting them. expects the map transform
+function paintRelief(c) {
+  if (!physical.relief) return;
+  c.save();
+  c.globalCompositeOperation = "soft-light";
+  c.globalAlpha = dark.matches ? 0.9 : 0.75;
+  c.drawImage(physical.relief, -HALF_W, TOP, HALF_W * 2, BOTTOM - TOP);
+  c.restore();
+}
+
+// lakes in the sea's colour and rivers in the water lines' ink. small rivers
+// and lakes join in as you zoom. expects the map transform
+function paintRivers(c) {
+  const s = base.s * view.k, z = zoomLevel();
+  const ranks = clamp(Math.floor(2.5 + 1.6 * Math.log2(Math.max(z, 0.5))), 1, 6);
+  c.lineJoin = c.lineCap = "round";
+  c.fillStyle = colors.bg;
+  c.strokeStyle = colors.coast;
+  c.lineWidth = 0.7 / s;
+  for (const l of physical.lakes) {
+    if (l.rank > ranks + 1 || !onScreen(l)) continue;
+    c.fill(l.path);
+    c.stroke(l.path);
+  }
+  c.strokeStyle = colors.river;
+  for (const r of physical.rivers) {
+    if (r.rank > ranks || !onScreen(r)) continue;
+    c.lineWidth = clamp(1.7 - r.rank * 0.2, 0.6, 1.7) * Math.min(1, 0.6 + z * 0.4) / s;
+    c.stroke(r.path);
+  }
+}
+
+// ranges, deserts and plateaus, lettered along their length in spaced, faded ink,
+// most important first and clear of the realm names (`placed`). an angled name is
+// checked as a chain of small boxes along its baseline. expects a css-pixel transform
+function drawRegions(c, placed) {
+  const z = zoomLevel();
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  c.fillStyle = colors.ink;
+  c.strokeStyle = colors.halo;
+  c.lineWidth = 2.5;
+  c.lineJoin = "round";
+  for (const r of physical.regions) {
+    if (z < r.zoom) continue;
+    const a = screenAt(...r.ga, 0.25), b = screenAt(...r.gb, 0.25);
+    if (!a || !b) continue;
+    const [ax, ay] = a, [bx, by] = b;
+    const mx = (ax + bx) / 2, my = (ay + by) / 2, len = Math.hypot(bx - ax, by - ay);
+    if (mx < -200 || mx > innerWidth + 200 || my < -50 || my > innerHeight + 50) continue;
+    const size = clamp(10.5 + Math.log2(z), 10.5, 14), text = r.kind === "desert" ? r.name : r.name.toUpperCase();
+    c.font = `${r.kind === "range" ? "500" : "italic 400"} ${size}px ${SERIF}`;
+    spaced(c, 0);
+    const bare = c.measureText(text).width;
+    if (len < bare * 0.7) continue; // the region is too small on screen for its name
+    const gap = clamp((len * 0.85 - bare) / Math.max(1, text.length - 1), size * 0.12, size * 0.9);
+    spaced(c, gap);
+    let angle = Math.atan2(by - ay, bx - ax);
+    if (angle > Math.PI / 2) angle -= Math.PI; // keep the lettering upright
+    if (angle < -Math.PI / 2) angle += Math.PI;
+    angle = clamp(angle, -1.1, 1.1);
+    const width = bare + gap * (text.length - 1), steps = Math.ceil(width / size), h = size * 0.6;
+    const chain = [];
+    for (let i = 0; i <= steps; i++) {
+      const d = (i / steps - 0.5) * width, x = mx + Math.cos(angle) * d, y = my + Math.sin(angle) * d;
+      chain.push([x - h, y - h, x + h, y + h]);
+    }
+    if (chain.some((b) => placed.some((p) => overlaps(b, p)))) continue;
+    placed.push(...chain);
+    c.save();
+    c.translate(mx, my);
+    c.rotate(angle);
+    c.globalAlpha = 0.5;
+    c.strokeText(text, 0, 0);
+    c.globalAlpha = 0.55;
+    c.fillText(text, 0, 0);
+    c.restore();
+  }
+  spaced(c, 0);
+}
 
 // water lines: thin rings following every coast, as on an engraved map. each
 // ring is a wide stroke in ink with a stroke 1px narrower in sea colour on top;
@@ -405,10 +590,10 @@ function onScreen(f, pad = 24) {
   return x + b[2] * s > -pad && x + b[0] * s < innerWidth + pad && y + b[3] * s > -pad && y + b[1] * s < innerHeight + pad;
 }
 
-function paintCoast(c, feats) {
+function paintCoast(c, feats, pad = 24) {
   if (!feats.coast) return;
   const s = base.s * view.k, spread = clamp(Math.sqrt(s / 260), 0.4, 1); // tighter on a small map
-  const shown = feats.filter((f) => onScreen(f));
+  const shown = feats.filter((f) => onScreen(f, pad));
   let path = feats.coast;
   if (shown.length < feats.length) {
     path = new Path2D();
@@ -447,7 +632,7 @@ function strokeBorders(c, feats, alpha) {
 const spaced = (c, px) => { if ("letterSpacing" in c) c.letterSpacing = `${px}px`; };
 
 // italic, widely spaced, in the blue of the water lines. expects a css-pixel transform
-function drawWaters(c) {
+function drawWaters(c, placed = []) {
   const z = (base.s * view.k) / 260; // 1 = the whole world on a laptop screen
   c.textAlign = "center";
   c.textBaseline = "middle";
@@ -458,22 +643,30 @@ function drawWaters(c) {
     const ocean = name.endsWith("Ocean"), size = ocean ? Math.min(22, 15 + 2 * Math.log2(z)) : 13.5;
     c.font = `italic ${size}px ${SERIF}`;
     spaced(c, size * (ocean ? 0.35 : 0.15));
-    c.fillText(name, ...toScreen(project(lon, lat)));
+    const at = screenAt(lon, lat, 0.3);
+    if (!at) continue;
+    const w = c.measureText(name).width / 2, box = [at[0] - w, at[1] - size / 2, at[0] + w, at[1] + size / 2];
+    if (box[0] < 4 || box[2] > innerWidth - 4 || placed.some((p) => overlaps(box, p))) continue;
+    placed.push(box);
+    c.fillText(name, ...at);
   }
   spaced(c, 0);
   c.globalAlpha = 1;
 }
 
 // realm names: big realms in spaced capitals sized to the realm, small ones in italics
-function drawLabels(c, feats, alpha) {
-  if (!feats || alpha <= 0) return;
-  const scale = base.s * view.k, placed = [];
+function drawLabels(c, feats, alpha, hits) {
+  const placed = [];
+  if (!feats || alpha <= 0) return placed;
+  const scale = pixelsPerUnit();
   c.textAlign = "center";
   c.textBaseline = "middle";
   c.lineJoin = "round";
-  const big = feats.filter((f) => f.name && f.label.area * scale * scale > 1600 && onScreen(f, 0));
+  const big = feats.filter((f) => f.name && f.label.area * scale * scale > 1600 && (globe.on || onScreen(f, 0)));
   for (const f of big.sort((a, b) => b.label.area - a.label.area)) {
-    const [x, y] = toScreen([f.label.x, f.label.y]), room = Math.sqrt(f.label.area) * scale * 1.8;
+    const at = globe.on ? globeScreen(...f.label.geo, 0.3) : toScreen([f.label.x, f.label.y]);
+    if (!at) continue;
+    const [x, y] = at, room = Math.sqrt(f.label.area) * scale * 1.8;
     let size = clamp(Math.sqrt(f.label.area) * scale / 12, 11, 19), caps = size >= 13, text, w;
     const measure = () => {
       text = caps ? f.name.toUpperCase() : f.name;
@@ -490,6 +683,7 @@ function drawLabels(c, feats, alpha) {
     const box = [x - w / 2 - 3, y - size / 2 - 2, x + w / 2 + 3, y + size / 2 + 2];
     if (placed.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) continue;
     placed.push(box);
+    hits?.push({ box, f });
     c.globalAlpha = alpha;
     c.strokeStyle = colors.halo;
     c.lineWidth = 3;
@@ -500,17 +694,20 @@ function drawLabels(c, feats, alpha) {
   }
   spaced(c, 0);
   c.globalAlpha = 1;
+  return placed;
 }
 
 // the map without pins is cached between frames, so playback only redraws pins.
-// `coast` holds the sea and water lines alone; transitions draw land over it.
-// the water lines are the slow part, so a map that's being panned or zoomed is
-// drawn without them, and they come back once it settles
+// the water lines are slow to draw, so they live in their own buffer that reaches
+// past the edges of the screen: panning slides it along and zooming stretches it,
+// and it's redrawn only when a pan outruns it or a zoom settles. transitions draw
+// the land over it
 const layer = document.createElement("canvas"), lctx = layer.getContext("2d");
 const coast = document.createElement("canvas"), cctx = coast.getContext("2d");
-let layerDirty = true, layerView = null, layerLines = false, coastView = null, coastLines = false;
+let layerDirty = true, layerView = null;
+let coastAt = null; // what the buffer holds: { view, feats, margin (css px), scale (buffer px per css px) }
 let lastMove = 0, settleTimer = 0;
-const SETTLE_MS = 160;
+const SETTLE_MS = 160, COAST_PIXELS = 16e6; // keeps big screens and phones within canvas limits
 const sameView = (a, b) => !!a && a.k === b.k && a.x === b.x && a.y === b.y;
 
 function fit(c) {
@@ -520,56 +717,120 @@ function fit(c) {
   }
 }
 
-function renderCoast(feats, lines = true) {
-  fit(coast);
+function renderCoast(feats) {
+  const m = Math.round(Math.max(innerWidth, innerHeight) * 0.2), w = innerWidth + 2 * m, h = innerHeight + 2 * m;
+  const scale = Math.min(dpr, Math.sqrt(COAST_PIXELS / (w * h))), s = base.s * view.k;
+  if (coast.width !== Math.round(w * scale) || coast.height !== Math.round(h * scale)) {
+    coast.width = Math.round(w * scale);
+    coast.height = Math.round(h * scale);
+  }
   cctx.setTransform(1, 0, 0, 1, 0, 0);
-  cctx.fillStyle = colors.bg; // the ocean goes on past the edge of the screen
+  cctx.fillStyle = colors.bg;
   cctx.fillRect(0, 0, coast.width, coast.height);
-  cctx.setTransform(...transform());
-  if (lines) paintCoast(cctx, feats);
-  coastView = { ...view };
-  coastLines = lines;
+  cctx.setTransform(s * scale, 0, 0, s * scale, (base.x + view.x + m) * scale, (base.y + view.y + m) * scale);
+  paintCoast(cctx, feats, m + 24);
+  coastAt = { view: { ...view }, feats, margin: m, scale };
 }
 
-function renderLayer(lines) {
-  renderCoast(state.shown ?? [], lines);
+// does the buffer still cover the whole screen?
+function coastCovers() {
+  const { view: v, margin: m } = coastAt, f = view.k / v.k;
+  const u = (x) => (x - base.x - view.x) / f + base.x + v.x + m, w = (y) => (y - base.y - view.y) / f + base.y + v.y + m;
+  return u(0) >= 0 && u(innerWidth) <= innerWidth + 2 * m && w(0) >= 0 && w(innerHeight) <= innerHeight + 2 * m;
+}
+
+function ensureCoast(feats) {
+  const a = coastAt, zooming = a && a.view.k !== view.k, settled = performance.now() - lastMove > SETTLE_MS;
+  if (!a || a.feats !== feats || (zooming ? settled : !coastCovers())) renderCoast(feats);
+}
+
+// the sea and water lines, shifted and scaled from the buffer to the current view
+function drawCoast(c) {
+  const { view: v, margin: m, scale } = coastAt, f = view.k / v.k, k = (f * dpr) / scale;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.fillStyle = colors.bg; // the ocean goes on past the edge of the screen
+  c.fillRect(0, 0, c.canvas.width, c.canvas.height);
+  c.setTransform(k, 0, 0, k, dpr * (base.x + view.x - (m + base.x + v.x) * f), dpr * (base.y + view.y - (m + base.y + v.y) * f));
+  c.drawImage(coast, 0, 0);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+function renderLayer() {
+  ensureCoast(state.shown ?? []);
   fit(layer);
-  lctx.setTransform(1, 0, 0, 1, 0, 0);
-  lctx.drawImage(coast, 0, 0);
+  drawCoast(lctx);
   lctx.setTransform(...transform());
   paintLand(lctx, state.shown ?? [], false);
+  paintRelief(lctx);
+  paintRivers(lctx);
   strokeBorders(lctx, state.shown ?? [], 1);
   lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawWaters(lctx);
-  drawLabels(lctx, state.shown, 1);
+  state.labelHits = [];
+  const placed = drawLabels(lctx, state.shown, 1, state.labelHits); // names first; seas and ranges fit around them
+  drawWaters(lctx, placed);
+  drawRegions(lctx, placed);
   layerView = { ...view };
-  layerLines = lines;
   layerDirty = false;
 }
 
 function drawMap() {
-  const moving = performance.now() - lastMove < SETTLE_MS;
-  if (layerDirty || !sameView(layerView, view) || (!moving && !layerLines)) renderLayer(!moving);
+  const stretched = coastAt && coastAt.view.k !== view.k;
+  if (layerDirty || !sameView(layerView, view) || (stretched && performance.now() - lastMove > SETTLE_MS)) renderLayer();
   ctx.drawImage(layer, 0, 0);
-  if (!layerLines) { // come back for the water lines
+  if (coastAt && coastAt.view.k !== view.k) { // come back to sharpen the water lines
     clearTimeout(settleTimer);
     settleTimer = setTimeout(invalidate, SETTLE_MS + 20);
   }
 }
 
+// the territory under the pointer gets a faint outline, the one in the card a firm one,
+// and a hovered name an underline
+function drawRealmHighlight() {
+  if (globe.on) globeHighlight();
+  else drawFlatHighlight();
+  const hit = state.hoverLabel && state.labelHits.find((h) => h.f === state.hoverLabel);
+  if (hit) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.strokeStyle = colors.accent;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(hit.box[0] + 4, hit.box[3] + 0.5);
+    ctx.lineTo(hit.box[2] - 4, hit.box[3] + 0.5);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawFlatHighlight() {
+  const s = base.s * view.k;
+  ctx.setTransform(...transform());
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = colors.accent;
+  for (const [f, w, a] of [[state.hoverRealm, 1.3, 0.45], [state.selectedRealm, 2, 0.85]]) {
+    if (!f || !state.shown?.includes(f)) continue;
+    ctx.globalAlpha = a;
+    ctx.lineWidth = w / s;
+    ctx.stroke(f.path);
+  }
+  ctx.globalAlpha = 1;
+}
+
 // heaviest events first; lighter ones only where there's room
 function drawPins() {
-  const gap = 11, cap = Math.round(45 * Math.sqrt(view.k));
-  const size = clamp(Math.sqrt((base.s * view.k) / 300), 0.55, 1); // smaller pins on a small map
+  const gap = 11, cap = Math.round(45 * Math.sqrt(globe.on ? globe.k : view.k));
+  const size = clamp(Math.sqrt(pixelsPerUnit() / 300), 0.55, 1); // smaller pins on a small map
   const noted = new Set([state.selected, ...state.notes.map((n) => n.e)].filter(Boolean));
   const candidates = [...noted, ...visibleEvents().filter((e) => !noted.has(e))];
   state.pins = [];
   for (const e of candidates) {
     if (state.pins.length >= cap) break;
-    const [x, y] = toScreen(project(e.lon, e.lat));
+    const at = screenAt(e.lon, e.lat, 0.12); // not right on the globe's rim
+    if (!at) continue;
+    const [x, y] = at;
     if (x < -10 || y < -10 || x > innerWidth + 10 || y > innerHeight + 10) continue;
     if (!noted.has(e) && state.pins.some((p) => Math.abs(p.x - x) < gap && Math.abs(p.y - y) < gap)) continue;
-    const age = (state.pos - e.endPos) / LINGER;
+    const age = (e.endLg - lg(state.year)) / LINGER;
     const r = (e === state.hoverEvent ? 2 : 0) + size * (e.importance === 1 ? 5.5 : e.importance === 2 ? 4.5 : 3.5);
     state.pins.push({ e, x, y, r, alpha: age > 0 ? 1 - age * 0.65 : 1 });
   }
@@ -596,18 +857,29 @@ function drawPins() {
 function draw() {
   const tr = state.transition, t = tr ? progress(tr) : 1;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (tr) {
+  if (globe.on) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height); // the globe is drawn underneath, by webgl
+    globeRender();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    state.labelHits = [];
+    const placed = drawLabels(ctx, state.shown, 1, state.labelHits);
+    drawWaters(ctx, placed);
+    drawRegions(ctx, placed);
+  } else if (tr) {
     composite(tr, t);
-    ctx.drawImage(coast, 0, 0);
+    drawCoast(ctx);
     ctx.drawImage(work, 0, 0, canvas.width, canvas.height);
     ctx.setTransform(...transform());
+    paintRelief(ctx);
+    paintRivers(ctx);
     strokeBorders(ctx, tr.from, 1 - t);
     strokeBorders(ctx, state.shown, t);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawWaters(ctx);
-    drawLabels(ctx, tr.from, 1 - t);
-    drawLabels(ctx, state.shown, t);
+    const placed = [...drawLabels(ctx, tr.from, 1 - t), ...drawLabels(ctx, state.shown, t)];
+    drawWaters(ctx, placed);
+    drawRegions(ctx, placed);
   } else drawMap();
+  drawRealmHighlight();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawPins();
   placeNotes();
@@ -618,7 +890,7 @@ function draw() {
 
 function notify(prev, year) {
   for (const n of state.notes) if (n.e.start > year) dismiss(n, true);
-  if (year <= prev || toPos(year) - toPos(prev) > 0.05) return; // backwards, or a jump
+  if (year <= prev || lg(prev) - lg(year) > 0.4) return; // backwards, or a jump
   const crossed = state.events.filter((e) => e.weight >= NOTIFY_WEIGHT && e.start > prev && e.start <= year);
   for (const e of crossed.slice(0, 2)) addNote(e); // already heaviest first
 }
@@ -699,10 +971,10 @@ function crosses(x0, y0, x1, y1, boxes) {
 // bubbles don't hop around; with nowhere to go only the pings show. a note whose
 // place is off screen waits hidden until it comes into view
 function placeNotes() {
-  const W = innerWidth, H = innerHeight, pad = 8, gap = 4;
-  const blocked = [rectOf($("contribute")), rectOf(document.querySelector("footer"))];
+  const W = innerWidth, H = innerHeight, pad = 8, gap = 8; // gap: between bubbles, stacked or not
+  const blocked = [rectOf($("top")), rectOf(document.querySelector("footer"))];
   if (!$("card").hidden) blocked.push(rectOf($("card")));
-  const at = state.notes.map((n) => toScreen(project(n.e.lon, n.e.lat)));
+  const at = state.notes.map((n) => screenAt(n.e.lon, n.e.lat) ?? [-1e4, -1e4]); // behind the globe: off screen
   const pings = at.map(([x, y]) => [x - 11, y - 11, x + 11, y + 11]);
   const stacks = [];
   state.notes.forEach((n, i) => {
@@ -724,8 +996,8 @@ function placeNotes() {
     let found = null;
     for (const k of [host.spot, ...all.keys()]) {
       const left = clamp(x + all[k][0], pad, W - w - pad), top = clamp(y + all[k][1], pad, H - h - pad);
-      const box = [left, top, left + w, top + h];
-      if ([...blocked, ...pings, ...placed].some((b) => overlaps(box, b))) continue;
+      const box = [left, top, left + w, top + h], clear = [left - gap, top - gap, left + w + gap, top + h + gap];
+      if ([...blocked, ...pings].some((b) => overlaps(box, b)) || placed.some((b) => overlaps(clear, b))) continue;
       const ex = clamp(x, left, left + w), ey = clamp(y, top, top + h);
       if (crosses(x, y, ex, ey, placed)) continue;
       found = { k, box, ex, ey };
@@ -756,11 +1028,12 @@ function placeNotes() {
 // --- timeline & playback ---------------------------------------------------------------
 
 function buildTicks() {
-  for (const y of [-100000, -10000, -3000, -1000, 1, 1000, 1500, 1800, 1900, 2000]) {
+  for (const y of [-5000, -4000, -3000, -2000, -1000, 1, 500, 1000, 1500, 2000]) {
     const s = document.createElement("span");
-    s.className = [-10000, 1, 1500, 2000].includes(y) ? "era" : "era minor";
+    s.className = [-5000, -3000, -1000, 1000, 2000].includes(y) ? "era" : "era minor";
     s.style.left = `${toPos(y) * 100}%`;
-    s.textContent = y === 1 ? "0" : y < 0 ? `${-y / 1000}k bce` : y;
+    s.textContent = y === 1 ? "0" : y < 0 ? `${-y} bce` : y;
+    if (y === MIN_YEAR) s.classList.add("start");
     $("ticks").append(s);
   }
 }
@@ -801,7 +1074,7 @@ function setYear(y) {
 }
 
 function setPlaying(on) {
-  if (on && state.pos >= 1) setYear(-10000); // replay from the neolithic
+  if (on && state.pos >= 1) setYear(MIN_YEAR); // replay from the start
   if (on !== state.playing) {
     for (const n of state.notes) if (n.fromPlay) on ? runNote(n) : freezeNote(n);
   }
@@ -813,7 +1086,7 @@ function setPlaying(on) {
 
 function stepPlay(dt) {
   if (!state.playing) return false;
-  setPos(state.pos + dt * PLAY_RATE * state.speed);
+  setPos(toPos(lgShift(toYear(state.pos), dt * PACE * state.speed)));
   if (state.pos >= 1) setPlaying(false);
   return state.playing;
 }
@@ -841,7 +1114,7 @@ $("track").addEventListener("pointerdown", (ev) => {
 document.querySelector("footer").addEventListener("wheel", (ev) => {
   ev.preventDefault();
   const d = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY;
-  setPos(state.pos + d * (ev.deltaMode === 1 ? 16 : 1) * 0.0001);
+  setPos(toPos(lgShift(toYear(state.pos), d * (ev.deltaMode === 1 ? 16 : 1) * 0.0008)));
 }, { passive: false });
 
 addEventListener("keydown", (ev) => {
@@ -871,13 +1144,23 @@ function eventAt(x, y, touch = false) {
   return best;
 }
 
-function polityAt(x, y) {
+function realmAt(x, y) {
+  if (globe.on) {
+    const g = globeGeo(x, y);
+    if (!g) return null;
+    const [lon, lat] = g;
+    wctx.setTransform(1, 0, 0, 1, 0, 0); // geographic paths: x is longitude, y is minus latitude
+    const hit = [...(state.shown ?? [])].reverse().find((f) =>
+      lon >= f.geoBox[0] && lon <= f.geoBox[2] && -lat >= f.geoBox[1] && -lat <= f.geoBox[3] && wctx.isPointInPath(f.geo, lon, -lat));
+    return hit?.name ? hit : null;
+  }
   const s = base.s * view.k, wx = (x - base.x - view.x) / s, wy = (y - base.y - view.y) / s;
   ctx.setTransform(...transform());
   const hit = [...(state.shown ?? [])].reverse().find((f) =>
     wx >= f.box[0] && wx <= f.box[2] && wy >= f.box[1] && wy <= f.box[3] && ctx.isPointInPath(f.path, x * dpr, y * dpr));
-  return hit?.name;
+  return hit?.name ? hit : null;
 }
+const labelAt = (x, y) => state.labelHits.find(({ box: b }) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3])?.f ?? null;
 
 const pointers = new Map();
 let drag = null, pinch = null;
@@ -920,9 +1203,18 @@ canvas.addEventListener("pointermove", (ev) => {
     return;
   }
   const e = eventAt(ev.clientX, ev.clientY);
-  if (e !== state.hoverEvent) { state.hoverEvent = e; invalidate(); }
-  canvas.style.cursor = e ? "pointer" : "";
-  $("hover").textContent = e ? e.title : polityAt(ev.clientX, ev.clientY) ?? "";
+  const label = e ? null : labelAt(ev.clientX, ev.clientY), realm = e ? null : label ?? realmAt(ev.clientX, ev.clientY);
+  if (e !== state.hoverEvent || realm !== state.hoverRealm || label !== state.hoverLabel) {
+    Object.assign(state, { hoverEvent: e, hoverRealm: realm, hoverLabel: label });
+    invalidate();
+  }
+  canvas.style.cursor = e || label ? "pointer" : "";
+  $("hover").textContent = e ? e.title : realm?.name ?? "";
+});
+canvas.addEventListener("pointerleave", () => {
+  Object.assign(state, { hoverEvent: null, hoverRealm: null, hoverLabel: null });
+  $("hover").textContent = "";
+  invalidate();
 });
 
 function endPointer(ev) {
@@ -937,7 +1229,8 @@ function endPointer(ev) {
   if (!drag) return;
   if (!drag.moved && ev.type === "pointerup") {
     const e = eventAt(ev.clientX, ev.clientY, ev.pointerType === "touch");
-    e ? openCard(e) : closeCard();
+    const realm = e ? null : labelAt(ev.clientX, ev.clientY) ?? realmAt(ev.clientX, ev.clientY);
+    e ? openCard(e) : realm ? openRealm(realm) : closeCard();
   } else if (drag.trail.length > 1) { // let it coast
     const [x0, y0, t0] = drag.trail[0], [x1, y1, t1] = drag.trail.at(-1);
     const dt = Math.max(16, t1 - t0) / 1000;
@@ -965,11 +1258,9 @@ canvas.addEventListener("wheel", (ev) => {
 
 canvas.addEventListener("dblclick", (ev) => zoomAt(ev.clientX, ev.clientY, ev.shiftKey ? 0.4 : 2.5));
 
-// description and photo come from wikipedia's page summary api, fetched on demand
+// descriptions and photos come from wikipedia's page summary api, fetched on demand
 const summaries = new Map();
-function summary(wiki) {
-  let title = wiki.split("/wiki/")[1];
-  try { title = decodeURIComponent(title); } catch {} // curated urls are escaped, wikidata ones aren't
+function summaryOf(title) {
   if (!summaries.has(title)) {
     summaries.set(title, fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -977,29 +1268,94 @@ function summary(wiki) {
   }
   return summaries.get(title);
 }
+function summary(wiki) {
+  let title = wiki.split("/wiki/")[1];
+  try { title = decodeURIComponent(title); } catch {} // curated urls are escaped, wikidata ones aren't
+  return summaryOf(title);
+}
 
-async function openCard(e) {
+// realm names come from the border data, not wikipedia ("Tsardom of Muscovy",
+// "Mandatory Palestine (GB)"), so: the exact title first (wikipedia follows its
+// redirects), then a search, trusting a result only if it carries every word of the
+// name, or all but one and its description dates it to this period. a wrong article
+// is worse than none
+const STOP = new Set(["of", "the", "and", "de", "du", "la", "le", "al", "el", "von", "van", "der", "des", "di", "da",
+  "empire", "kingdom", "dynasty"]); // too generic to tell articles apart
+// names the lookup gets wrong or can't find, mapped by hand. add to this freely
+const REALM_ARTICLES = {
+  "Ming Chinese Empire": "Ming dynasty",
+  "Manchu Empire": "Qing dynasty",
+  "Quazaq Khanate": "Kazakh Khanate",
+};
+// an article that came by redirect or search must describe a place or a polity
+const PLACE = /\b(state|empire|kingdom|dynasty|country|region|people|khanate|sultanate|caliphate|polity|confederation|confederacy|city|republic|emirate|territor|colon|province|island|duchy|principality|tribe|ethnic|culture|civili[sz]ation|realm|nation|monarchy|chiefdom|federation|union|protectorate|mandate|area|homeland|horde|shogunate)/i;
+const isPlace = (s) => PLACE.test(s?.description ?? "");
+const sameTitle = (s, name) => s?.title?.toLowerCase().replace(/_/g, " ") === name.toLowerCase();
+const realmArticles = new Map();
+function realmArticle(name, year) {
+  const clean = REALM_ARTICLES[name] ?? name.replace(/\s*\([^)]*\)/g, "").trim();
+  if (!realmArticles.has(clean)) {
+    realmArticles.set(clean, (async () => {
+      const direct = await summaryOf(clean);
+      if (direct?.type === "standard" && (sameTitle(direct, clean) || isPlace(direct))) return direct;
+      const words = clean.toLowerCase().split(/[^\p{L}]+/u).filter((w) => w.length > 2 && !STOP.has(w))
+        .map((w) => (w.length > 4 ? w.replace(/(es|s)$/, "") : w));
+      const found = await fetch(`https://en.wikipedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(clean)}&limit=5`)
+        .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      const stems = (text) => text.toLowerCase().split(/[^\p{L}]+/u).filter((w) => w.length > 2 && !STOP.has(w));
+      const extra = (p) => stems(p.title).filter((w) => !words.some((q) => w.startsWith(q))).length;
+      const fits = (found?.pages ?? []).filter((p) => {
+        const about = `${p.title} ${p.description ?? ""}`.toLowerCase();
+        const missing = words.filter((w) => !about.includes(w)).length;
+        const years = (p.description ?? "").match(/\d{3,4}/g)?.map(Number) ?? [];
+        const bc = /\bBC/.test(p.description ?? "") ? -1 : 1;
+        const dated = years.length > 1 && Math.min(...years) * bc <= year && year <= Math.max(...years) * bc;
+        // an article about something else that mentions the name ("Sermon of al-Gharra")
+        // adds words to it; only trust that when its dates put it in this period
+        return dated ? missing <= (words.length > 2 ? 1 : 0) : missing === 0 && extra(p) <= 1 && !/^(sermon|battle|siege|treaty|list|history) /i.test(p.title);
+      });
+      // of the articles that fit, the one whose title adds least: "Ming dynasty", not "Transition from Ming to Qing"
+      for (const p of fits.sort((a, b) => extra(a) - extra(b))) {
+        const s = await summaryOf(p.key);
+        if (s?.type === "standard" && isPlace(s)) return s;
+      }
+      return null;
+    })());
+  }
+  return realmArticles.get(clean);
+}
+
+function fillCard({ meta, title, related = [] }) {
   const card = $("card"), img = card.querySelector("img"), desc = card.querySelector(".desc");
-  const when = e.end ? `${fmt(e.start)} – ${fmt(e.end)}` : fmt(e.start);
-  card.querySelector(".meta").textContent = `${e.approx ? "c. " : ""}${when} · ${e.kind}`;
-  card.querySelector("h2").textContent = e.title;
-  const a = card.querySelector(".wiki");
-  a.href = e.wiki ?? "";
-  a.hidden = !e.wiki;
+  card.querySelector(".meta").textContent = meta;
+  card.querySelector("h2").textContent = title;
+  card.querySelector(".wiki").hidden = true;
   img.hidden = true;
   img.removeAttribute("src");
-  desc.textContent = e.wiki ? "loading…" : "";
-  desc.classList.toggle("loading", !!e.wiki);
+  desc.textContent = "loading…";
+  desc.classList.add("loading");
+  const list = card.querySelector(".related");
+  list.replaceChildren(...related.map((e) => {
+    const li = document.createElement("li"), b = document.createElement("button");
+    b.innerHTML = "<small></small> ";
+    b.querySelector("small").textContent = fmt(e.start);
+    b.append(e.title);
+    b.onclick = () => openCard(e);
+    li.append(b);
+    return li;
+  }));
+  card.querySelector(".related-wrap").hidden = !related.length;
   card.hidden = false;
   card.scrollTop = 0;
-  state.selected = e;
   invalidate();
-  if (!e.wiki) return;
+}
 
-  const s = await summary(e.wiki);
-  if (state.selected !== e) return; // another event was opened meanwhile
+function fillSummary(s, url) {
+  const card = $("card"), img = card.querySelector("img"), desc = card.querySelector(".desc"), a = card.querySelector(".wiki");
   desc.classList.remove("loading");
   desc.textContent = s?.type === "standard" ? s.extract : "";
+  a.href = url ?? s?.content_urls?.desktop?.page ?? "";
+  a.hidden = !a.href;
   if (s?.thumbnail) {
     const big = (s.originalimage?.width ?? 0) >= 500 ? s.thumbnail.source.replace(/\/\d+px-/, "/500px-") : null;
     img.onerror = () => { if (big && img.src !== s.thumbnail.source) img.src = s.thumbnail.source; else img.hidden = true; };
@@ -1007,9 +1363,38 @@ async function openCard(e) {
     img.src = big ?? s.thumbnail.source;
   }
 }
+
+async function openCard(e) {
+  const when = e.end ? `${fmt(e.start)} – ${fmt(e.end)}` : fmt(e.start);
+  fillCard({ meta: `${e.approx ? "c. " : ""}${when} · ${e.kind}`, title: e.title });
+  state.selected = e;
+  state.selectedRealm = null;
+  if (!e.wiki) return fillSummary(null);
+  const s = await summary(e.wiki);
+  if (state.selected === e) fillSummary(s, e.wiki); // unless another card was opened meanwhile
+}
+
+// a territory: what it was, who it answered to, and the biggest events inside it
+// while these borders stood
+async function openRealm(f) {
+  const i = state.snapshots.indexOf(state.wanted), from = state.wanted, until = state.snapshots[i + 1] ?? MAX_YEAR;
+  wctx.setTransform(1, 0, 0, 1, 0, 0); // the paths are in projected units
+  const inside = state.events
+    .filter((e) => e.start >= from && e.start < until)
+    .filter((e) => { const [x, y] = project(e.lon, e.lat); return wctx.isPointInPath(f.path, x, y); })
+    .slice(0, 6) // heaviest first already
+    .sort((a, b) => a.start - b.start);
+  const under = f.subject && f.subject !== f.name ? ` · under ${f.subject}` : "";
+  fillCard({ meta: `${fmt(from)} – ${fmt(until)}${under}`, title: f.name, related: inside });
+  state.selected = null;
+  state.selectedRealm = f;
+  const s = await realmArticle(f.name, from);
+  if (state.selectedRealm === f) fillSummary(s);
+}
+
 function closeCard() {
   $("card").hidden = true;
-  state.selected = null;
+  state.selected = state.selectedRealm = null;
   invalidate();
 }
 $("close").onclick = closeCard;
@@ -1025,6 +1410,7 @@ addEventListener("keydown", (ev) => ev.key === "Escape" && closeCard());
     fetch("data/events-wikidata.json").then((r) => r.json()).catch(() => []),
   ]);
   state.events = mergeEvents(curated, wikidata);
+  loadPhysical().catch(() => {}); // the map works without it
   const fonts = ["400", "500", "italic 400"].map((w) => document.fonts.load(`${w} 16px "EB Garamond"`));
   await Promise.race([Promise.all(fonts), new Promise((r) => setTimeout(r, 1500))]).catch(() => {});
   document.fonts.addEventListener("loadingdone", () => { layerDirty = true; invalidate(); });
@@ -1039,4 +1425,5 @@ addEventListener("keydown", (ev) => ev.key === "Escape" && closeCard());
   };
   addEventListener("hashchange", fromHash);
   fromHash();
+  restoreGlobe();
 })();
