@@ -1,13 +1,16 @@
 """build data/borders/ from aourednik/historical-basemaps (GPL-3.0).
 
 usage: python3 pipeline/borders.py [path-to-historical-basemaps]
-clones the source into .cache/ if no path is given.
+clones the source into .cache/ if no path is given. editorial corrections to
+the source (see corrections.py) are applied at the end.
 """
 import json
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+import corrections
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "borders"
@@ -104,6 +107,7 @@ def build(src):
         years.append(year)
         print(f"{year:>8}  {len(feats):>4} polities")
     (OUT / "index.json").write_text(json.dumps(sorted(years)))
+    corrections.apply(OUT)
 
 
 if __name__ == "__main__":

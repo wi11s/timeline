@@ -45,5 +45,7 @@
   {"id": "india-independence", "title": "Independence and partition of India", "kind": "political", "start": 1947, "lat": 28.61, "lon": 77.21, "importance": 1, "wiki": "https://en.wikipedia.org/wiki/Partition_of_India"},
   {"id": "prc", "title": "People's Republic of China proclaimed", "kind": "political", "start": 1949, "lat": 39.9, "lon": 116.39, "importance": 1, "wiki": "https://en.wikipedia.org/wiki/Proclamation_of_the_People%27s_Republic_of_China"},
   {"id": "berlin-wall", "title": "Fall of the Berlin Wall", "kind": "political", "start": 1989, "lat": 52.52, "lon": 13.4, "importance": 1, "wiki": "https://en.wikipedia.org/wiki/Fall_of_the_Berlin_Wall"},
-  {"id": "ussr-dissolution", "title": "Dissolution of the Soviet Union", "kind": "political", "start": 1991, "lat": 55.75, "lon": 37.62, "importance": 1, "wiki": "https://en.wikipedia.org/wiki/Dissolution_of_the_Soviet_Union"}
+  {"id": "ussr-dissolution", "title": "Dissolution of the Soviet Union", "kind": "political", "start": 1991, "lat": 55.75, "lon": 37.62, "importance": 1, "wiki": "https://en.wikipedia.org/wiki/Dissolution_of_the_Soviet_Union"},
+  {"id": "palestine-independence", "title": "Palestine declares independence", "kind": "political", "start": 1988, "lat": 36.75, "lon": 3.06, "importance": 2, "wiki": "https://en.wikipedia.org/wiki/Palestinian_Declaration_of_Independence"},
+  {"id": "palestine-un-observer", "title": "State of Palestine becomes a UN observer state", "kind": "political", "start": 2012, "lat": 40.75, "lon": -73.97, "importance": 2, "wiki": "https://en.wikipedia.org/wiki/United_Nations_General_Assembly_resolution_67/19"}
 ]

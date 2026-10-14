@@ -457,7 +457,7 @@ function drawLabels(c, feats, alpha) {
   c.textAlign = "center";
   c.textBaseline = "middle";
   c.lineJoin = "round";
-  const big = feats.filter((f) => f.name && f.label.area * scale * scale > 2500);
+  const big = feats.filter((f) => f.name && f.label.area * scale * scale > 1600);
   for (const f of big.sort((a, b) => b.label.area - a.label.area)) {
     const [x, y] = toScreen([f.label.x, f.label.y]), room = Math.sqrt(f.label.area) * scale * 1.8;
     let size = clamp(Math.sqrt(f.label.area) * scale / 12, 11, 19), caps = size >= 13, text, w;
