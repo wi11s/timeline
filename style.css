@@ -1,24 +1,32 @@
-/* an old printed atlas: paper sea, muted realm tints, blue ink for water and accents */
+/* an old printed atlas: paper sea, muted realm tints, blue ink for water and accents.
+   the controls float over it on soft paper panels */
 :root {
   --bg: #dae3df; --ink: #2b261e; --muted: #7c7466;
   --line: rgba(74, 58, 38, .3); --land: #ece2cc; --accent: #1f4e9c;
   --coast: rgba(36, 82, 128, .42); --river: rgba(36, 82, 128, .6); --halo: rgba(250, 245, 235, .65);
-  --panel: rgba(248, 243, 232, .95); --space: #ebe5d7; --badge: #f8f3e8;
+  --panel: rgba(248, 243, 232, .97); --space: #ebe5d7; --badge: #f8f3e8;
   --realm-0: #e7cc9f; --realm-1: #ddbcaa; --realm-2: #c9d3a9; --realm-3: #bfd0cc; --realm-4: #e5d79f;
   --realm-5: #d6c4d4; --realm-6: #cfbd9a; --realm-7: #e7c0a3; --realm-8: #bacbb0; --realm-9: #d9c8a6;
   --serif: "EB Garamond", "Iowan Old Style", Georgia, serif;
-  /* a colour for each kind of event (pins, notes, the key) */
+  /* a colour for each kind of event (pins, cards, the key) */
   --k-war: #9b2a2a; --k-battle: #c2531c; --k-political: #1f4e9c; --k-culture: #6d4a9e; --k-science: #16756f; --k-exploration: #2f7d3b; --k-disaster: #a77408; --k-art: #b02d6c;
+  /* the floating controls */
+  --edge: rgba(74, 58, 38, .14); --hover: rgba(74, 58, 38, .07); --on-accent: #fbf8f1;
+  --lift: 0 1px 2px rgba(60, 40, 15, .07), 0 6px 18px rgba(60, 40, 15, .1);
+  --float: 0 2px 6px rgba(60, 40, 15, .08), 0 16px 40px rgba(60, 40, 15, .17);
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #172025; --ink: #ece2cd; --muted: #928a7a;
     --line: rgba(236, 226, 205, .2); --land: #2e2a22; --accent: #86abe6;
     --coast: rgba(150, 186, 220, .3); --river: rgba(150, 186, 220, .5); --halo: rgba(27, 25, 21, .6);
-    --panel: rgba(31, 28, 23, .95); --space: #12110f; --badge: #172025;
+    --panel: rgba(31, 28, 23, .97); --space: #12110f; --badge: #172025;
     --k-war: #e07a72; --k-battle: #f0995e; --k-political: #86abe6; --k-culture: #b9a0e6; --k-science: #6cc9bf; --k-exploration: #86c98f; --k-disaster: #e6bd5c; --k-art: #ee86b4;
     --realm-0: #5b4a30; --realm-1: #59413b; --realm-2: #46503a; --realm-3: #3b4d4c; --realm-4: #57522f;
     --realm-5: #4c4150; --realm-6: #4e4431; --realm-7: #5c4433; --realm-8: #3d4d3d; --realm-9: #4f4637;
+    --edge: rgba(236, 226, 205, .12); --hover: rgba(236, 226, 205, .07); --on-accent: #121a22;
+    --lift: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 18px rgba(0, 0, 0, .3);
+    --float: 0 2px 6px rgba(0, 0, 0, .3), 0 16px 40px rgba(0, 0, 0, .45);
   }
 }
 * { box-sizing: border-box; }
@@ -35,6 +43,7 @@ body {
   -webkit-user-select: none; user-select: none;
   -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
 }
+button { -webkit-tap-highlight-color: transparent; }
 canvas { position: fixed; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 canvas.dragging { cursor: grabbing; }
 
@@ -49,56 +58,83 @@ body::after {
 @media (prefers-color-scheme: dark) {
   body::after { opacity: .35; }
 }
-#notes, #hover, #top, #zoom, #card, #explore, #focus-chip, footer { z-index: 2; }
+#hover, #top, #zoom, #card, #explore, #focus-chip, footer { z-index: 2; }
+#results { z-index: 3; }
+
+/* --- buttons: grouped on soft pills ------------------------------------------------ */
+.bar {
+  display: flex; background: var(--panel); border: 1px solid var(--edge); border-radius: 999px;
+  box-shadow: var(--lift); overflow: hidden;
+}
+.bar > button, .bar > a {
+  height: 38px; padding: 0 15px; display: flex; align-items: center; gap: 7px;
+  border: 0; background: none; color: var(--ink); text-decoration: none; cursor: pointer;
+  font: 500 15.5px/1 var(--serif); letter-spacing: .01em;
+}
+.bar > * + * { box-shadow: inset 1px 0 var(--edge); }
+.bar > :hover { background: var(--hover); }
+.bar > :focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; border-radius: 999px; }
+.bar > [hidden] { display: none; }
+.bar > [aria-pressed="true"], .bar > [aria-expanded="true"] { color: var(--accent); background: color-mix(in srgb, var(--accent) 11%, transparent); }
+.bar svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+#contribute svg { fill: currentColor; stroke: none; }
 
 /* zoom: in, out, the whole world */
 #zoom {
-  position: fixed; top: max(14px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left));
-  display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 3px;
-  background: var(--panel); overflow: hidden;
+  position: fixed; top: max(16px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left));
+  flex-direction: column; border-radius: 20px;
 }
-#zoom button {
-  width: 36px; height: 34px; display: grid; place-items: center; padding: 0; border: 0;
-  background: none; color: var(--ink); cursor: pointer;
+#zoom button { width: 40px; height: 38px; padding: 0; justify-content: center; }
+#zoom button + button { box-shadow: inset 0 1px var(--edge); }
+#zoom svg { width: 15px; height: 15px; stroke-width: 1.5; }
+
+#top {
+  position: fixed; top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right));
+  display: flex; gap: 10px;
 }
-#zoom button + button { border-top: 1px solid var(--line); }
-#zoom button:hover { color: var(--accent); }
-#zoom button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-#zoom svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* search: a box in the top bar, matching events in a list under it (search.js) */
+#search {
+  height: 40px; padding: 0 14px 0 13px; display: flex; align-items: center; gap: 8px; cursor: text;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 999px; box-shadow: var(--lift);
+}
+#search:focus-within { border-color: color-mix(in srgb, var(--accent) 60%, transparent); box-shadow: var(--lift), 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+#search svg { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--muted); stroke-width: 1.4; stroke-linecap: round; }
+#search input {
+  width: 190px; height: 100%; padding: 0; border: 0; outline: none; background: none; color: var(--ink);
+  font: 16px/1 var(--serif); -webkit-user-select: text; user-select: text; -webkit-appearance: none; appearance: none;
+}
+#search input::placeholder { color: var(--muted); font-style: italic; }
+#search input::-webkit-search-cancel-button { display: none; }
+#results {
+  position: fixed; margin: 0; padding: 6px; list-style: none;
+  max-height: calc(100vh - 180px); max-height: calc(100dvh - 180px); overflow: auto; overscroll-behavior: contain;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 16px; box-shadow: var(--float);
+}
+#results li { display: flex; gap: 11px; align-items: flex-start; padding: 8px 10px; border-radius: 10px; cursor: pointer; }
+#results li[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+#results li svg.kind { flex: none; width: 16px; height: 16px; margin: 3px 0 0; }
+#results b { display: block; font-size: 16.5px; font-weight: 400; line-height: 1.25; }
+#results mark { background: none; color: inherit; font-weight: 600; }
+#results small { display: block; color: var(--muted); font-size: 13px; font-style: italic; font-feature-settings: "onum"; }
+#results .none { color: var(--muted); font-style: italic; cursor: default; }
 
 /* the globe (globe.js) is drawn under the map canvas, which carries its labels and pins */
 #globe { display: none; }
 body.globe #globe { display: block; }
 body.globe { background: var(--space); }
-body.globe footer { background: linear-gradient(transparent, var(--space) 45%); }
 
 #hover {
-  position: fixed; top: 20px; left: 66px; pointer-events: none;
+  position: fixed; top: 24px; left: 72px; pointer-events: none;
   font-size: 16px; font-style: italic; color: var(--muted);
 }
 
-#top {
-  position: fixed; top: max(14px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right));
-  display: flex; gap: 8px;
-}
-#top > * {
-  height: 34px; padding: 0 14px; display: flex; align-items: center; gap: 8px;
-  border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink);
-  text-decoration: none; font: 13px/1 var(--serif); letter-spacing: .08em; text-transform: uppercase; cursor: pointer;
-}
-#top > *:hover { border-color: var(--muted); }
-#top > *:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-#top > [hidden] { display: none; }
-#top svg { width: 15px; height: 15px; fill: currentColor; }
-#globe-toggle svg, #explore-toggle svg { fill: none; stroke: currentColor; stroke-width: 1.2; }
-#explore-toggle[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
-
 /* explore: stories and regions to focus on */
 #explore {
-  position: fixed; top: 60px; right: 16px; width: min(380px, calc(100vw - 32px));
-  max-height: calc(100vh - 170px); max-height: calc(100dvh - 170px); overflow: auto; overscroll-behavior: contain;
-  padding: 10px 18px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
-  box-shadow: 0 10px 30px rgba(60, 40, 15, .14);
+  position: fixed; top: 68px; right: 16px; width: min(380px, calc(100vw - 32px));
+  max-height: calc(100vh - 180px); max-height: calc(100dvh - 180px); overflow: auto; overscroll-behavior: contain;
+  padding: 10px 18px 14px; background: var(--panel); border: 1px solid var(--edge); border-radius: 16px;
+  box-shadow: var(--float);
 }
 #explore .key {
   display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 30px 4px 0; padding-bottom: 10px;
@@ -118,48 +154,44 @@ body.globe footer { background: linear-gradient(transparent, var(--space) 45%); 
 #explore li button:hover b { color: var(--accent); }
 #explore li button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #explore .close {
-  position: absolute; top: 6px; right: 8px; width: 28px; height: 28px; border: 0; border-radius: 50%;
+  position: absolute; top: 8px; right: 10px; width: 28px; height: 28px; border: 0; border-radius: 50%;
   background: none; color: var(--muted); font: 20px/1 var(--serif); cursor: pointer;
 }
 
-/* the focus being played, above the year */
+/* the focus being played, above the dock */
 #focus-chip {
-  position: fixed; left: max(18px, env(safe-area-inset-left)); bottom: 74px;
-  display: flex; align-items: center; gap: 10px; padding: 6px 6px 7px 13px;
-  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 3px;
+  position: fixed; left: max(16px, env(safe-area-inset-left)); bottom: 104px;
+  display: flex; align-items: center; gap: 10px; padding: 7px 6px 8px 14px;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--lift);
 }
+#focus-chip::before { content: ""; align-self: stretch; width: 3px; margin: 1px 0 1px -6px; border-radius: 2px; background: var(--accent); }
 #focus-chip[hidden] { display: none; }
 #focus-chip small { display: block; color: var(--muted); font-size: 12.5px; font-style: italic; }
 #focus-chip b { font-size: 16px; font-weight: 500; }
 #focus-chip button { border: 0; background: none; color: var(--muted); font: 20px/1 var(--serif); cursor: pointer; padding: 2px 6px; }
 #focus-chip button:hover { color: var(--ink); }
-#band {
-  position: absolute; top: 50%; height: 7px; margin-top: -3.5px; border-radius: 4px;
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-}
 
-#guided svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.3; }
-#controls #guided { display: flex; gap: 6px; border-radius: 17px; }
-#guided[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
-#globe-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
-
+/* the card: the story being told, or whatever was clicked; a line joins it to its pin */
 #card {
   -webkit-user-select: text; user-select: text;
-  position: fixed; top: 60px; right: 16px; width: min(350px, calc(100vw - 32px));
-  max-height: calc(100vh - 170px); max-height: calc(100dvh - 170px); overflow: auto; overscroll-behavior: contain;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
-  box-shadow: 0 1px 0 var(--line), 0 10px 30px rgba(60, 40, 15, .14);
+  position: fixed; top: 68px; right: 16px; width: min(345px, calc(100vw - 32px));
+  max-height: calc(100vh - 180px); max-height: calc(100dvh - 180px); overflow: auto; overscroll-behavior: contain;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 16px; box-shadow: var(--float);
 }
 #card img {
-  display: block; width: 100%; max-height: 200px; object-fit: cover;
-  background: var(--line); border-bottom: 1px solid var(--line); filter: sepia(.15);
+  display: block; width: 100%; height: 190px; object-fit: cover;
+  background: var(--line); filter: sepia(.15);
 }
 #card .body { padding: 14px 18px 16px; }
 #card h2 { margin: 2px 26px 8px 0; font-size: 23px; font-weight: 500; line-height: 1.15; }
 #card .meta { margin: 0; color: var(--muted); font-size: 14px; font-style: italic; }
+#card .meta svg.kind { width: 15px; height: 15px; margin: 0 6px -2px 0; }
+#card .meta .kind-name { color: var(--kind); font-style: normal; font-size: 16.5px; font-weight: 600; font-variant-caps: all-small-caps; letter-spacing: .07em; }
+#card .meta .when { font-feature-settings: "onum"; }
+#card .meta .when::before { content: "·"; margin: 0 6px 0 4px; font-style: normal; }
 #card .desc {
   margin: 0 0 10px; font-size: 16px; line-height: 1.45; hyphens: auto;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 8; line-clamp: 8; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 7; line-clamp: 7; overflow: hidden;
 }
 #card .desc:empty { display: none; }
 #card .desc.loading { color: var(--muted); font-style: italic; }
@@ -176,77 +208,75 @@ body.globe footer { background: linear-gradient(transparent, var(--space) 45%); 
 #card .related small { color: var(--muted); font-style: italic; font-size: 13px; margin-right: 4px; font-feature-settings: "onum"; }
 
 #close {
-  position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border: 0; border-radius: 50%;
-  background: var(--panel); color: var(--muted); font: 20px/1 var(--serif); cursor: pointer;
+  position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; border: 0; border-radius: 50%;
+  background: var(--panel); color: var(--muted); font: 20px/1 var(--serif); cursor: pointer; box-shadow: var(--lift);
 }
 #close:hover { color: var(--ink); }
 
+/* --- the dock: play, the year, the timeline, speed and guided ------------------------ */
 footer {
-  position: fixed; left: 0; right: 0; bottom: 0;
-  padding: 14px max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
-  display: flex; align-items: center; gap: 18px;
-  background: linear-gradient(transparent, var(--bg) 45%);
+  position: fixed; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 16px; padding: 10px 14px 10px 10px;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 20px; box-shadow: var(--float);
 }
-#controls { display: flex; gap: 6px; }
-#controls button {
-  height: 34px; min-width: 34px; padding: 0 10px; display: grid; place-items: center;
-  border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--ink);
-  font: italic 15px/1 var(--serif); cursor: pointer;
+#play {
+  width: 46px; height: 46px; flex: none; display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: 50%; background: var(--accent); color: var(--on-accent); cursor: pointer;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent);
 }
-#controls #speed { border-radius: 17px; min-width: 48px; }
-#controls button:hover { border-color: var(--muted); }
-#controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-#play svg { width: 13px; height: 13px; fill: currentColor; }
+#play:hover { filter: brightness(1.08); }
+#play:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+#play svg { width: 17px; height: 17px; fill: currentColor; }
 #play .i-pause, #play[aria-pressed="true"] .i-play { display: none; }
 #play[aria-pressed="true"] .i-pause { display: inline; }
-#play[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 
 #year {
-  min-width: 150px; font-size: 32px; font-weight: 400; line-height: 1;
-  font-feature-settings: "onum", "pnum"; letter-spacing: .01em;
+  min-width: 3.7em; font-size: 30px; font-weight: 400; line-height: 1; white-space: nowrap;
+  font-feature-settings: "lnum", "tnum"; letter-spacing: .01em;
 }
-#track { position: relative; flex: 1; height: 38px; cursor: pointer; outline: none; }
-#track::before {
-  content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--line);
-}
+#year small { margin-left: 5px; color: var(--muted); font-size: 19px; font-variant-caps: all-small-caps; letter-spacing: .06em; }
+
+/* the track: a bar of how much happened when, played part in blue; years under it */
+#track { position: relative; flex: 1; align-self: stretch; min-height: 48px; cursor: pointer; outline: none; touch-action: none; }
+#track::before { content: ""; position: absolute; left: 0; right: 0; top: 30px; height: 1px; background: var(--line); }
+#density { position: absolute; left: 0; top: 4px; width: 100%; height: 26px; pointer-events: none; }
 #ticks .era {
-  position: absolute; bottom: -6px; font-size: 13px; font-style: italic; color: var(--muted);
+  position: absolute; top: 34px; font-size: 13px; font-style: italic; color: var(--muted); white-space: nowrap;
   transform: translateX(-50%); font-feature-settings: "onum";
 }
 #ticks .era.start { transform: none; }
-#handle {
-  position: absolute; top: 5px; bottom: 5px; width: 2px; margin-left: -1px; background: var(--accent);
+#ticks .era:last-child { transform: translateX(-75%); }
+#band { position: absolute; top: 0; height: 31px; border-radius: 5px; background: color-mix(in srgb, var(--accent) 13%, transparent); }
+#handle { position: absolute; top: 0; height: 31px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--accent); pointer-events: none; }
+#handle::after { /* the knob, on the baseline */
+  content: ""; position: absolute; left: 50%; top: 30px; width: 13px; height: 13px; transform: translate(-50%, -50%);
+  border-radius: 50%; background: var(--accent); border: 2px solid var(--badge); box-shadow: 0 1px 3px rgba(0, 0, 0, .25);
 }
-#handle::before { /* a small diamond, like a scale marker */
-  content: ""; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px;
-  background: var(--accent); transform: translate(-50%, -50%) rotate(45deg);
+#track:focus-visible #handle::after { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent); }
+#peek { position: absolute; top: 0; height: 31px; width: 1px; background: color-mix(in srgb, var(--ink) 40%, transparent); pointer-events: none; }
+#peek[hidden] { display: none; }
+#peek::after {
+  content: attr(data-year); position: absolute; bottom: calc(100% + 18px); left: 50%; transform: translateX(-50%);
+  padding: 4px 9px 5px; border-radius: 8px; background: var(--ink); color: var(--badge);
+  font: 14px/1 var(--serif); white-space: nowrap; box-shadow: var(--lift);
 }
-#track:focus-visible #handle { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
 
-/* notifications: a ping on the spot and a bubble near it (placed by placeNotes) */
-#notes { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
-.note { position: absolute; left: 0; top: 0; transition: opacity .25s; }
-.note.out { opacity: 0; }
-.note .ping {
-  position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%;
-  border: 1.5px solid var(--kind, var(--accent)); animation: ping 1.4s ease-out 3 both;
+#options { display: flex; gap: 6px; }
+#options button {
+  height: 34px; padding: 0 12px; display: flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid var(--edge); border-radius: 17px; background: none; color: var(--ink);
+  font: italic 15px/1 var(--serif); cursor: pointer;
 }
-@keyframes ping { from { transform: scale(.4); opacity: 1; } to { transform: scale(2.6); opacity: 0; } }
-.note .bubble {
-  position: absolute; left: 0; top: 0; max-width: 290px; width: max-content;
-  display: flex; gap: 10px; align-items: flex-start;
-  padding: 8px 12px 9px; text-align: left; cursor: pointer; pointer-events: auto;
-  background: var(--panel); color: var(--ink); border: 1px solid var(--line);
-  border-top: 2px solid var(--kind, var(--accent)); border-radius: 3px;
-  font: inherit; box-shadow: 0 3px 10px rgba(60, 40, 15, .12);
-  animation: appear .3s ease-out both;
+#options button:hover { background: var(--hover); }
+#options button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#speed { min-width: 46px; }
+#guided svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.3; }
+#options #guided[aria-pressed="true"] {
+  color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
-.note .leader {
-  position: absolute; left: 0; top: 0; height: 1px; background: var(--kind, var(--accent)); opacity: .5;
-  transform-origin: 0 50%; pointer-events: none;
-}
-.note.paused .ping, .note.paused .bubble { animation-play-state: paused; }
-.note .bubble small { display: block; color: var(--muted); font-size: 13px; font-style: italic; }
+
 svg.kind {
   width: 14px; height: 14px; margin: 0 5px -2px 0; fill: none; stroke: var(--accent);
   stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
@@ -259,48 +289,42 @@ svg.kind.k-science { stroke: var(--k-science); }
 svg.kind.k-exploration { stroke: var(--k-exploration); }
 svg.kind.k-disaster { stroke: var(--k-disaster); }
 svg.kind.k-art { stroke: var(--k-art); }
-.note .bubble b { display: block; font-size: 16px; font-weight: 500; line-height: 1.2; }
-.note .bubble .text { min-width: 0; }
-.note .bubble img { width: 46px; height: 46px; flex: none; object-fit: cover; border-radius: 2px; background: var(--line); filter: sepia(.15); }
-.note .bubble .line {
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
-  margin-top: 3px; font-size: 14px; line-height: 1.3; opacity: .8;
-}
-.note .bubble .line:empty { display: none; }
-/* the biggest moments: larger, with more to read */
-.note.feature .bubble { max-width: 360px; padding: 10px 14px 12px; gap: 12px; box-shadow: 0 8px 24px rgba(60, 40, 15, .18); }
-.note.feature .bubble b { font-size: 21px; line-height: 1.12; margin-top: 1px; }
-.note.feature .bubble img { width: 76px; height: 76px; }
-.note.feature .bubble .line { -webkit-line-clamp: 4; line-clamp: 4; font-size: 15px; }
-.note.feature .ping { border-width: 2px; }
-/* notes grow from their centre, so they never poke past where they'll settle */
-@keyframes appear { from { opacity: 0; scale: .96; } }
-@media (prefers-reduced-motion: reduce) {
-  .note .ping { animation: none; opacity: .6; }
-  .note .bubble { animation: none; }
-}
 
+/* --- phones --------------------------------------------------------------------------- */
 @media (max-width: 600px) {
-  footer { flex-wrap: wrap; gap: 6px 12px; padding-top: 24px; }
-  #track { flex-basis: 100%; height: 44px; } /* a comfortable thumb target */
-  #year { font-size: 28px; min-width: 0; }
-  #ticks .minor { display: none; }
-  #controls button { height: 40px; min-width: 40px; }
-  #controls #speed { min-width: 52px; border-radius: 20px; }
+  #zoom { left: max(12px, env(safe-area-inset-left)); top: max(12px, env(safe-area-inset-top)); }
+  #zoom button { width: 40px; height: 40px; }
+  #top { right: max(12px, env(safe-area-inset-right)); top: max(12px, env(safe-area-inset-top)); gap: 8px; }
+  .bar > button, .bar > a { height: 38px; padding: 0 12px; }
+  #top .bar span { display: none; } /* icons only */
   #hover { display: none; } /* hover names don't exist on touch */
-  #top > * { height: 32px; padding: 0 10px; font-size: 12px; }
-  #zoom button { width: 38px; height: 38px; }
-  #card { top: auto; bottom: 150px; left: 12px; right: 12px; width: auto; max-height: 55vh; max-height: 55dvh; }
-  #card img { max-height: 150px; }
-  #card h2 { font-size: 21px; }
-  .note .bubble { max-width: min(270px, 76vw); }
-  .note .bubble b { font-size: 15px; }
-  .note .bubble img { width: 38px; height: 38px; }
-  .note.feature .bubble { max-width: min(300px, 78vw); }
-  .note.feature .bubble b { font-size: 18px; }
-  .note.feature .bubble img { width: 58px; height: 58px; }
-  #explore { top: auto; bottom: 120px; left: 12px; right: 12px; width: auto; max-height: 60vh; max-height: 60dvh; }
-  #focus-chip { bottom: 128px; }
-  #top #explore-toggle span, #top #globe-toggle span { display: none; }
-  #controls #guided span { display: none; }
+  /* search folds to its icon, and opens across the top bar while typing */
+  #search { height: 40px; padding: 0 11px; gap: 0; }
+  #search input { width: 0; }
+  #search:focus-within { position: fixed; left: 62px; right: max(12px, env(safe-area-inset-right)); gap: 8px; }
+  #search:focus-within input { width: auto; flex: 1; }
+  #top:has(#search:focus-within) > :not(#search) { visibility: hidden; }
+  #results { max-height: 45vh; max-height: 45dvh; }
+
+  footer {
+    left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom));
+    flex-wrap: wrap; gap: 6px 12px; padding: 9px 12px 4px 9px; border-radius: 18px;
+  }
+  #play { width: 44px; height: 44px; }
+  #year { font-size: 27px; min-width: 0; }
+  #year small { font-size: 17px; }
+  #options { margin-left: auto; }
+  #options button { height: 38px; }
+  #options #guided { width: 38px; padding: 0; }
+  #options #guided span { display: none; }
+  #track { order: 1; flex-basis: 100%; min-height: 52px; } /* last, full width: a comfortable thumb target */
+  #ticks .minor { display: none; }
+
+  #card { top: auto; bottom: 146px; left: 10px; right: 10px; width: auto; max-height: 40vh; max-height: 40dvh; }
+  #card img { height: 110px; }
+  #card .body { padding: 11px 15px 13px; }
+  #card h2 { font-size: 20px; margin-bottom: 5px; }
+  #card .desc { font-size: 15px; -webkit-line-clamp: 4; line-clamp: 4; }
+  #explore { top: auto; bottom: 146px; left: 10px; right: 10px; width: auto; max-height: 60vh; max-height: 60dvh; }
+  #focus-chip { left: 10px; bottom: 146px; }
 }

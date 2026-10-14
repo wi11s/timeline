@@ -14,8 +14,8 @@ const G = { gl: null, uniforms: {}, textures: [], cur: 0, painted: null, fade: n
 
 // --- geometry ------------------------------------------------------------------------
 
-function globeArea() {
-  const h = innerHeight - (innerWidth < 600 ? 110 : 90);
+function globeArea() { // centred above the dock (the card fits beside it)
+  const h = innerHeight - dockSpace();
   return { cx: innerWidth / 2, cy: h / 2 + 8, r: Math.min(innerWidth, h) * 0.44 };
 }
 const globeRadius = () => globeArea().r * globe.k;
@@ -289,7 +289,7 @@ if (!window.WebGL2RenderingContext) globeToggle.hidden = true;
 function setGlobe(on) {
   if (on === globe.on) return;
   if (on && !G.gl && !initGl()) { globeToggle.hidden = true; return; }
-  const { cx, cy } = globeArea();
+  const { cx, cy } = mapArea(); // the flat map's middle
   if (on) {
     const s = base.s * view.k;
     const [lon, lat] = unproject((cx - base.x - view.x) / s, (cy - base.y - view.y) / s);
@@ -307,9 +307,7 @@ function setGlobe(on) {
   state.transition = null;
   state.labelHits = [];
   document.body.classList.toggle("globe", on);
-  globeToggle.setAttribute("aria-pressed", on);
-  globeToggle.querySelector("span").textContent = on ? "flat map" : "globe";
-  try { localStorage.setItem("view", on ? "globe" : "flat"); } catch {}
+  globeToggle.setAttribute("aria-pressed", !on); // the button is "flat map": pressed while it shows
   viewChanged();
 }
 
@@ -318,7 +316,8 @@ addEventListener("keydown", (ev) => {
   if (ev.key === "g" && !ev.metaKey && !ev.ctrlKey && !(ev.target instanceof HTMLInputElement)) setGlobe(!globe.on);
 });
 
-// called by app.js once the map is set up
+// called by app.js once the map is set up: it always opens on the globe
 function restoreGlobe() {
-  try { if (localStorage.getItem("view") === "globe") setGlobe(true); } catch {}
+  try { localStorage.removeItem("view"); } catch {} // an old saved choice of the flat map
+  setGlobe(true);
 }

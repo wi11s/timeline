@@ -2,7 +2,7 @@
 // moments, and focuses: a region or a topic with its own stretch of time, framed
 // on the map and played at its own pace. focuses live in data/focuses.json.
 
-const STOP_MS = 6000;   // how long a guided stop holds (playback time)
+const STOP_MS = 4000;   // how long a guided stop holds (playback time)
 const FOCUS_S = 90;     // how long a focus plays at 1×, unless it says otherwise
 
 // --- camera ----------------------------------------------------------------------------
@@ -10,7 +10,7 @@ const FOCUS_S = 90;     // how long a focus plays at 1×, unless it says otherwi
 
 function cameraNow() {
   if (globe.on) return { lon: globe.lon, lat: globe.lat, k: globe.k };
-  const s = base.s * view.k, { cx, cy } = globeArea();
+  const s = base.s * view.k, { cx, cy } = mapArea();
   const [lon, lat] = unproject((cx - base.x - view.x) / s, (cy - base.y - view.y) / s);
   return { lon, lat, k: view.k };
 }
@@ -20,7 +20,7 @@ function setCamera(lon, lat, k) {
   if (globe.on) Object.assign(globe, { lon, lat: clamp(lat, -80, 80), k: clamp(k, 0.6, MAX_ZOOM), goalK: null });
   else {
     k = clamp(k, minZoom, MAX_ZOOM);
-    const s = base.s * k, [px, py] = project(lon, lat), { cx, cy } = globeArea();
+    const s = base.s * k, [px, py] = project(lon, lat), { cx, cy } = mapArea();
     Object.assign(view, { k, x: cx - base.x - px * s, y: cy - base.y - py * s });
     clampView(view);
   }
@@ -28,9 +28,9 @@ function setCamera(lon, lat, k) {
 }
 
 // glide there, pulling back a little on long hops so you see where you're going
-function flyTo(lon, lat, k, dur = 1700) {
+function flyTo(lon, lat, k, dur = 1700, pull = 0.9) {
   goal = fling = null;
-  state.flight = { from: cameraNow(), to: { lon, lat, k }, start: performance.now(), dur };
+  state.flight = { from: cameraNow(), to: { lon, lat, k }, start: performance.now(), dur, pull };
   invalidate();
 }
 
@@ -39,7 +39,7 @@ function stepFlight() {
   if (!f) return false;
   const t = ease(Math.min(1, (performance.now() - f.start) / f.dur)), { from: a, to: b } = f;
   const dlon = ((b.lon - a.lon + 540) % 360) - 180, hop = Math.min(1, Math.hypot(dlon, b.lat - a.lat) / 100);
-  const lk = Math.log(a.k) + (Math.log(b.k) - Math.log(a.k)) * t - 0.9 * hop * Math.sin(Math.PI * t);
+  const lk = Math.log(a.k) + (Math.log(b.k) - Math.log(a.k)) * t - f.pull * hop * Math.sin(Math.PI * t);
   setCamera(a.lon + dlon * t, a.lat + (b.lat - a.lat) * t, Math.exp(lk));
   if (t >= 1) state.flight = null;
   return true;
@@ -74,6 +74,29 @@ function stepStop(dt) {
   if (st.home) flyTo(st.home.lon, st.home.lat, st.home.k, 1400);
 }
 
+// each new story nudges the camera: the globe turns enough to bring its event well onto
+// the near side and a little further, the flat map pans it well into view, and both
+// zoom a touch: in for a story close to where the camera is, out for one far away (a
+// focus keeps its own zoom). it waits while the reader steers. guided adds the fly-ins (guide)
+function drift(e) {
+  if (!state.playing || state.stop || state.flight) return;
+  if (performance.now() - state.userAt < 8000) return; // they're steering
+  const c = cameraNow(), rad = Math.PI / 180, dlon = ((e.lon - c.lon + 540) % 360) - 180;
+  const d = Math.acos(clamp(Math.sin(c.lat * rad) * Math.sin(e.lat * rad) +
+    Math.cos(c.lat * rad) * Math.cos(e.lat * rad) * Math.cos(dlon * rad), -1, 1)) / rad; // degrees away
+  const k = state.focus ? c.k + (state.focus.zoom - c.k) * 0.3 :
+    globe.on ? clamp(1.5 - d / 150, 1.05, 1.45) : clamp(2 - d / 110, 1.2, 1.9);
+  if (globe.on) {
+    const f = Math.min(1, Math.max(0, (d - 40) / d) + 0.25);
+    return flyTo(c.lon + dlon * f, c.lat + (e.lat - c.lat) * f, k, 1400, 0.25);
+  }
+  const at = screenAt(e.lon, e.lat), { cx, cy, w, h } = mapArea();
+  const ix = clamp(at[0], cx - w * 0.3, cx + w * 0.3), iy = clamp(at[1], cy - h * 0.3, cy + h * 0.3);
+  const sx = cx + (at[0] - ix) + (ix - cx) * 0.25, sy = cy + (at[1] - iy) + (iy - cy) * 0.25, s = base.s * view.k;
+  const [lon, lat] = unproject((sx - base.x - view.x) / s, (sy - base.y - view.y) / s);
+  flyTo(lon, lat, k, 1400, 0.25);
+}
+
 function setGuided(on) {
   state.guided = on;
   $("guided").setAttribute("aria-pressed", on);
@@ -106,13 +129,12 @@ fetch("data/focuses.json").then((r) => r.json()).then((list) => {
 function startFocus(f) {
   closeExplore();
   closeCard();
-  for (const n of [...state.notes]) dismiss(n, true);
   state.queue = [];
   state.stop = null;
   // a focus plays its whole stretch in about FOCUS_S seconds, in log-years like everything else
   const seconds = f.seconds ?? FOCUS_S, to = Math.min(f.to, MAX_YEAR);
   state.focus = { ...f, rate: (lg(f.from) - lg(to)) / seconds };
-  pickNotes(state.focus, seconds, to);
+  state.focus.reel = buildReel({ from: f.from, to, rate: state.focus.rate, keep: inFocus, stops: () => true });
   const chip = $("focus-chip");
   chip.querySelector("b").textContent = f.title;
   chip.querySelector("small").textContent = `${fmt(f.from)} – ${f.to >= MAX_YEAR ? "today" : fmt(f.to)}`;
@@ -122,37 +144,87 @@ function startFocus(f) {
   band.style.width = `${(toPos(Math.min(f.to, MAX_YEAR)) - toPos(f.from)) * 100}%`;
   band.hidden = false;
   setYear(f.from);
+  drawDensity();
   layerDirty = true;
   flyTo(f.lon, f.lat, globe.on ? f.zoom * 0.8 + 0.2 : f.zoom, 1900);
   state.userAt = -1e9;
   setTimeout(() => state.focus?.id === f.id && setPlaying(true), 1200);
 }
 
-// a focus chooses its notes in advance, so they come at a steady pace: playback is cut
-// into beats (by log-years, as it plays), each beat gets its most important event, and
-// beats with nothing are made up from the strongest left over. the biggest few become
-// guided stops
-function pickNotes(f, seconds, to) {
-  const span = lg(f.from) - lg(to), beats = Math.max(4, Math.round(seconds / BEAT_S));
-  const pool = state.events.filter((e) => e.start >= f.from && e.start <= to && inFocus(e)); // heaviest first
-  const picks = new Set(), taken = new Set();
-  for (const e of pool) {
-    const beat = Math.min(beats - 1, Math.floor(((lg(f.from) - lg(e.start)) / span) * beats));
-    if (!taken.has(beat)) { taken.add(beat); picks.add(e); }
+// --- the reel ------------------------------------------------------------------------------
+// stories are told one at a time, so what plays is chosen ahead: the most interesting events,
+// at least REEL_S seconds of playback apart (playback then waits while each is read,
+// see holding() in app.js). a pick that would
+// repeat a neighbour (the same kind of event, or the same part of the world) counts for
+// less, so it keeps moving. the strongest few, STOP_S apart, are guided stops. normal
+// playback has one reel for all of history; each focus makes its own
+
+const REEL_S = 0.9, STOP_S = 15;
+const REEL_WEIGHT = 50; // what an event needs to play outside a focus
+
+// on its own: how widely it's written about, less for the routine "x founded". the
+// hand-picked turning points (data/events.json) are always among the strongest
+const CURATED = { 1: 300, 2: 160, 3: 60 };
+const interest = (e) => (e.curated ? Math.max(e.weight, CURATED[e.importance]) + e.weight * 0.2 : e.weight) *
+  (e.title.endsWith(" founded") ? 0.3 : 1);
+// the hand-picked turning points may sit closer together than other picks: playback
+// waits for each to be read anyway
+const turning = (e) => e.curated && e.importance === 1;
+const nearby = (a, b) => Math.hypot((a.lon - b.lon) * Math.cos((a.lat * Math.PI) / 180), a.lat - b.lat) < 15;
+
+function buildReel({ from, to, rate, minWeight = 0, keep = () => true, stops = featured }) {
+  const gap = REEL_S * rate, pool = [];
+  for (const e of state.events) {
+    if (e.start >= from && e.start <= to && (e.weight >= minWeight || e.curated) && keep(e)) pool.push({ e, t: lg(e.start), s: interest(e) });
   }
-  for (const e of pool) {
-    if (picks.size >= beats) break;
-    picks.add(e);
+  // the finale (data/events.json) is the last story: picked first, with nothing after it
+  const finale = pool.find((c) => c.e.finale);
+  if (finale) for (const c of pool) if (c !== finale && c.e.start >= finale.e.start) c.out = true;
+  // greedy: take the best that still fits, again and again, judging each against the
+  // picks either side of it. whatever's too close to a pick stays out
+  const picks = finale ? [Object.assign(finale, { out: true })] : [];
+  for (;;) {
+    let best = null, bestS = 0;
+    for (const c of pool) {
+      if (c.out) continue;
+      let before = null, after = null;
+      for (const p of picks) {
+        if (Math.abs(p.t - c.t) < gap * (turning(p.e) && turning(c.e) ? 0.4 : 1)) { c.out = true; break; }
+        if (p.t > c.t ? !before || p.t < before.t : !after || p.t > after.t) p.t > c.t ? (before = p) : (after = p);
+      }
+      if (c.out) continue;
+      let s = c.s;
+      if (!turning(c.e)) for (const p of [before, after]) { // turning points are never repeats
+        if (p && Math.abs(p.t - c.t) < gap * 3) s *= (p.e.kind === c.e.kind ? 0.7 : 1) * (nearby(p.e, c.e) ? 0.7 : 1);
+      }
+      if (s > bestS) { best = c; bestS = s; }
+    }
+    if (!best) break;
+    best.out = true;
+    best.s = bestS;
+    picks.push(best);
   }
-  f.picks = picks;
-  f.stops = new Set([...picks].slice(0, 4)); // pool order: the heaviest picks
+  const chosen = [];
+  for (const p of picks) { // strongest first
+    if (stops(p.e) && chosen.every((q) => Math.abs(q.t - p.t) >= STOP_S * rate)) chosen.push(p);
+  }
+  return {
+    order: picks.map((p) => p.e).sort((a, b) => a.start - b.start),
+    score: new Map(picks.map((p) => [p.e, p.s])),
+    stops: new Set(chosen.map((p) => p.e)),
+  };
 }
+
+let mainReel = null;
+const currentReel = () => state.focus?.reel ??
+  (mainReel ??= buildReel({ from: MIN_YEAR, to: MAX_YEAR, rate: PACE, minWeight: REEL_WEIGHT }));
 
 function endFocus() {
   state.focus = null;
   state.queue = [];
   $("focus-chip").hidden = true;
   $("band").hidden = true;
+  drawDensity();
   layerDirty = true;
   invalidate();
 }

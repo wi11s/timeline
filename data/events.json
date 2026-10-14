@@ -47,5 +47,6 @@
   {"id": "berlin-wall", "title": "Fall of the Berlin Wall", "kind": "political", "start": 1989, "lat": 52.52, "lon": 13.4, "importance": 1, "wiki": "https://en.wikipedia.org/wiki/Fall_of_the_Berlin_Wall"},
   {"id": "ussr-dissolution", "title": "Dissolution of the Soviet Union", "kind": "political", "start": 1991, "lat": 55.75, "lon": 37.62, "importance": 1, "wiki": "https://en.wikipedia.org/wiki/Dissolution_of_the_Soviet_Union"},
   {"id": "palestine-independence", "title": "Palestine declares independence", "kind": "political", "start": 1988, "lat": 36.75, "lon": 3.06, "importance": 2, "wiki": "https://en.wikipedia.org/wiki/Palestinian_Declaration_of_Independence"},
-  {"id": "palestine-un-observer", "title": "State of Palestine becomes a UN observer state", "kind": "political", "start": 2012, "lat": 40.75, "lon": -73.97, "importance": 2, "wiki": "https://en.wikipedia.org/wiki/United_Nations_General_Assembly_resolution_67/19"}
+  {"id": "palestine-un-observer", "title": "State of Palestine becomes a UN observer state", "kind": "political", "start": 2012, "lat": 40.75, "lon": -73.97, "importance": 2, "wiki": "https://en.wikipedia.org/wiki/United_Nations_General_Assembly_resolution_67/19"},
+  {"id": "gaza-genocide", "title": "Gaza genocide", "kind": "disaster", "start": 2023, "lat": 31.45, "lon": 34.4, "importance": 2, "wiki": "https://en.wikipedia.org/wiki/Gaza_genocide", "finale": true}
 ]

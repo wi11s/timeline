@@ -1,13 +1,12 @@
 // world timeline: equal earth map + log-scale timeline. no dependencies.
 
-const MIN_YEAR = -5000, MAX_YEAR = 2025, PRESENT = 2050;
+const MIN_YEAR = -3000, MAX_YEAR = 2025, PRESENT = 2050;
 const PACE = 0.055;          // playback, in log-years per second at 1× (see the time scale)
 const SPEEDS = [0.5, 1, 2, 4];
 const LINGER = 0.16;         // how long a pin stays (fading) after its event ends, in log-years
-const NOTIFY_WEIGHT = 80;    // sitelinks an event needs to pop a notification
 const NOTE_MS = 7000, FEATURE_MS = 9000; // how long a note stays (playback time)
+const READ_MS = 1700;        // a story is up at least this long before the next takes its place (at 1×)
 const FEATURE_WEIGHT = 150;  // sitelinks that make an event a guided stop (or importance 1)
-const BEAT_S = 4.5;          // a focus picks one note for about every this many seconds
 const TRANSITION_MS = 900, FEATHER = 6;
 const MAX_ZOOM = 60;
 const REALMS = 10;           // realm tints, --realm-0 … --realm-9 in style.css
@@ -42,9 +41,8 @@ const state = {
   hoverEvent: null,
   playing: false,
   speed: 1,
-  notes: [],
-  queue: [],            // events waiting for a free note
-  ghosts: [],           // notes fading out: they keep their space until gone
+  story: null,          // the reel's event being told in the card
+  queue: [],            // events waiting for their turn
   ease: 1,              // playback slows while there's something to read
   guided: true,         // guided playback: fly to the biggest moments (story.js)
   stop: null,           // the guided stop in progress
@@ -93,7 +91,7 @@ function roundYear(y) {
   const step = stepAt(y), r = Math.round(y / step) * step;
   return clamp(r === 0 ? 1 : r, MIN_YEAR, MAX_YEAR);
 }
-const fmt = (y) => (y < 0 ? `${(-y).toLocaleString()} BCE` : y < 1000 ? `${y} CE` : `${y}`);
+const fmt = (y) => (y < 0 ? `${(-y).toLocaleString()} BCE` : `${y} CE`);
 
 // --- data --------------------------------------------------------------------
 
@@ -165,6 +163,7 @@ const article = (url) => url && decodeURIComponent(url).toLowerCase();
 function mergeEvents(curated, wikidata) {
   const twins = new Map(wikidata.filter((e) => e.wiki).map((e) => [article(e.wiki), e]));
   for (const e of curated) {
+    e.curated = true;
     const twin = twins.get(article(e.wiki));
     if (twin) { e.sitelinks ??= twin.sitelinks; twin.dup = true; }
   }
@@ -181,6 +180,15 @@ function mergeEvents(curated, wikidata) {
 // --- view: smooth zoom, inertial pan, pinch ------------------------------------
 
 let dpr = 1, base = { s: 1, x: 0, y: 0 }, minZoom = 1;
+const dockSpace = () => (innerWidth < 600 ? 136 : 92); // the timeline dock along the bottom
+
+// the flat map's part of the screen: above the dock and, on a wide screen, left of the
+// card's column, so a story never covers the map it's about
+const CARD_COLUMN = 377;
+function mapArea() {
+  const side = innerWidth >= 1000 ? CARD_COLUMN : 0, h = innerHeight - dockSpace();
+  return { cx: (innerWidth - side) / 2, cy: h / 2 + 8, w: innerWidth - side, h };
+}
 let goal = null;   // view we're easing toward (wheel / double-click zoom)
 let fling = null;  // pan velocity after a drag, px/s
 
@@ -188,23 +196,25 @@ function resize() {
   dpr = devicePixelRatio || 1;
   canvas.width = innerWidth * dpr;
   canvas.height = innerHeight * dpr;
-  const h = innerHeight - (innerWidth < 600 ? 110 : 90), pad = 16;
-  const fitW = (innerWidth - pad * 2) / (HALF_W * 2), fitH = (h - pad * 2) / (BOTTOM - TOP);
+  const { cx, cy, w, h } = mapArea(), pad = 16;
+  const fitW = (w - pad * 2) / (HALF_W * 2), fitH = (h - pad * 2) / (BOTTOM - TOP);
   // a phone held upright would show a thin strip of world: start zoomed in on the
   // old world instead, filling more of the height, and let it zoom out to fit
   const s = fitW < fitH * 0.75 ? fitH * 0.75 : Math.min(fitW, fitH);
   minZoom = Math.min(1, fitW / s);
-  base = { s, x: innerWidth / 2, y: h / 2 + 8 - (s * (TOP + BOTTOM)) / 2 };
+  base = { s, x: cx, y: cy - (s * (TOP + BOTTOM)) / 2 };
   if (minZoom < 1 && view.k === 1 && view.x === 0) view.x = -project(20, 0)[0] * s; // centre on europe/africa
   clampView(view);
   layerDirty = true;
   coastAt = null;
+  density.bins = null;
+  drawDensity();
   viewChanged();
 }
 
-// keep the point under the middle of the screen on the map
+// keep the point under the middle of the map's area on the map
 function clampView(v) {
-  const s = base.s * v.k, cx = innerWidth / 2 - base.x, cy = innerHeight / 2 - base.y;
+  const s = base.s * v.k, cx = mapArea().cx - base.x, cy = innerHeight / 2 - base.y;
   v.x = clamp(v.x, cx - HALF_W * s, cx + HALF_W * s);
   v.y = clamp(v.y, cy - BOTTOM * s, cy - TOP * s);
   return v;
@@ -213,10 +223,6 @@ function clampView(v) {
 function viewChanged() {
   state.transition = null; // transitions are rasterised in screen space
   lastMove = performance.now();
-  if (state.ghosts.length) { // fading notes can't follow the map
-    for (const el of document.querySelectorAll(".note.out")) el.remove();
-    state.ghosts = [];
-  }
   invalidate();
 }
 
@@ -441,6 +447,7 @@ function readColors() {
   colors.realms = Array.from({ length: REALMS }, (_, i) => css.getPropertyValue(`--realm-${i}`).trim());
   colors.space = css.getPropertyValue("--space").trim();
   colors.kinds = Object.fromEntries(Object.keys(KIND_ICONS).map((k) => [k, css.getPropertyValue(`--k-${k}`).trim()]));
+
   layerDirty = true;
   if (typeof globeStale === "function") globeStale(true);
   coastAt = null;
@@ -457,7 +464,7 @@ function tick(now) {
   let busy = stepPlay(dt);
   busy = stepFlight() || busy;
   busy = stepView(dt) || busy;
-  busy = pumpNotes() || busy;
+  busy = pumpStories() || busy;
   if (state.transition && progress(state.transition) >= 1) state.transition = null;
   busy ||= !!state.transition || (globe.on && globeBusy());
   draw();
@@ -704,6 +711,7 @@ function strokeBorders(c, feats, alpha) {
   c.globalAlpha = 1;
 }
 
+const overlaps = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
 const spaced = (c, px) => { if ("letterSpacing" in c) c.letterSpacing = `${px}px`; };
 
 // italic, widely spaced, in the blue of the water lines. expects a css-pixel transform
@@ -912,7 +920,7 @@ const kindSvg = (kind) => `<svg class="kind k-${kind}" viewBox="0 0 16 16" aria-
 function drawPins() {
   const size = clamp(Math.sqrt(pixelsPerUnit() / 300), 0.75, 1.1); // smaller pins on a small map
   const gap = 19 * size, cap = Math.round(45 * Math.sqrt(globe.on ? globe.k : view.k));
-  const noted = new Set([state.selected, ...state.notes.map((n) => n.e)].filter(Boolean));
+  const noted = new Set([state.selected].filter(Boolean));
   const candidates = [...noted, ...visibleEvents().filter((e) => !noted.has(e))];
   state.pins = [];
   for (const e of candidates) {
@@ -951,7 +959,8 @@ function drawPins() {
   ctx.globalAlpha = 1;
   const sel = state.pins.find((p) => p.e === state.selected);
   if (sel) {
-    ctx.strokeStyle = colors.accent;
+    ctx.strokeStyle = colors.kinds?.[sel.e.kind] ?? colors.accent;
+    ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(sel.x, sel.y, sel.r + 4, 0, Math.PI * 2);
     ctx.stroke();
@@ -985,8 +994,8 @@ function draw() {
   } else drawMap();
   drawRealmHighlight();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawTether();
   drawPins();
-  placeNotes();
 }
 
 // --- notifications -------------------------------------------------------------------
@@ -1003,205 +1012,184 @@ const inFocus = (e) => {
   return !b || (e.lon >= b[0] && e.lon <= b[2] && e.lat >= b[1] && e.lat <= b[3]);
 };
 
-// events crossed by the timeline queue up for a note. they never push each other
-// off: a note appears when there's a free slot, and an event that's waited too long
-// is dropped. the wikipedia summary is fetched while it waits
+// the events chosen to play (the reel, story.js) queue up as the timeline crosses
+// them, and each in turn opens in the card, joined to its pin by a line. one story
+// shows at a time: the next takes its place once it's been up long enough to read,
+// and one that's waited too long is dropped. wikipedia summaries for the next few are
+// fetched ahead, so stories appear on time. a card the reader opened themselves (or
+// touched) stays until they close it, and the reel lets it be
 function notify(prev, year) {
-  for (const n of state.notes) if (n.e.start > year) dismiss(n, true);
+  if (state.story && state.story.e.start > year) closeCard();
   if (year <= prev || lg(prev) - lg(year) > 0.4) { state.queue = []; return; } // backwards, or a jump
-  // a focus has picked its notes in advance (story.js); otherwise the big events get one
-  const picked = state.focus?.picks;
-  const crossed = state.events.filter((e) => e.start > prev && e.start <= year &&
-    (picked ? picked.has(e) : e.weight >= NOTIFY_WEIGHT));
-  for (const e of crossed.slice(0, 3)) enqueue(e); // already heaviest first
-  const big = crossed.find((e) => (state.focus ? state.focus.stops.has(e) : featured(e)));
-  if (big) guide(big);
+  const reel = currentReel(), crossed = reel.order.filter((e) => e.start > prev && e.start <= year);
+  for (const e of crossed) enqueue(e, reel.score.get(e));
+  const stop = crossed.find((e) => reel.stops.has(e));
+  if (stop && !readersCard()) guide(stop);
+  for (const e of reel.order.filter((e) => e.start > year).slice(0, 4)) {
+    if (e.wiki) summary(e.wiki).then((s) => { const src = cardImage(s); if (src) new Image().src = src; });
+  }
 }
 
-function enqueue(e) {
-  if (state.notes.some((n) => n.e === e) || state.queue.some((q) => q.e === e)) return;
-  const q = { e, since: performance.now(), summary: e.wiki ? undefined : null };
-  if (e.wiki) summary(e.wiki).then((s) => { q.summary = s ?? null; invalidate(); });
+const readersCard = () => !$("card").hidden && !state.story;
+
+function enqueue(e, score) {
+  if (state.story?.e === e || state.queue.some((q) => q.e === e)) return;
+  const q = { e, score, since: performance.now(), ready: !e.wiki };
+  if (e.wiki) summary(e.wiki).then(() => { q.ready = true; invalidate(); });
   state.queue.push(q);
-  state.queue.sort((a, b) => featured(b.e) - featured(a.e) || b.e.weight - a.e.weight);
-  state.queue.length = Math.min(state.queue.length, 8);
+  state.queue.sort((a, b) => b.score - a.score);
+  state.queue.length = Math.min(state.queue.length, 3);
 }
 
-// every frame: show queued notes while there's room
-function pumpNotes() {
-  // an event can wait about as long as 1.5 seconds of playback, whatever the speed
+// how long the story has been up, in its own (playback) time, and whether it's been
+// read. faster playback reads faster, though not in proportion
+const shownFor = (st) => st.total - (st.paused ? st.left : st.due - performance.now());
+const wasRead = (st) => shownFor(st) >= READ_MS / Math.sqrt(state.speed);
+
+// a story still being read holds playback back from the next pick: busy stretches of
+// history slow down so every story gets its turn, and quiet ones fly by
+function holding(rate) {
+  const st = state.story;
+  if (!st?.fromPlay || wasRead(st)) return false;
+  const next = currentReel().order.find((e) => e.start > state.year);
+  return !!next && lg(state.year) - lg(next.start) < 0.35 * rate * state.speed;
+}
+
+// every frame: tell the best queued story once the one up has been read
+function pumpStories() {
+  // an event can wait about as long as 4 seconds of playback for its turn, whatever the speed
   const now = lg(state.year), t = performance.now();
-  const wait = Math.max(0.004, 1.5 * (state.focus ? state.focus.rate : PACE) * state.speed);
-  state.queue = state.queue.filter((q) => q.e.start <= state.year && lg(q.e.start) - now < wait);
-  const room = (innerWidth < 600 ? 2 : 3) - state.notes.length;
-  for (let i = 0; i < room; i++) {
-    const k = state.queue.findIndex((q) => q.summary !== undefined || t - q.since > 1500);
-    if (k < 0) break;
-    const [q] = state.queue.splice(k, 1);
-    addNote(q.e, q.summary);
+  const wait = Math.max(0.004, 4 * (state.focus ? state.focus.rate : PACE) * state.speed);
+  state.queue = readersCard() ? [] : state.queue.filter((q) => q.e.start <= state.year && lg(q.e.start) - now < wait);
+  const k = state.queue.findIndex((q) => q.ready || t - q.since > 1500);
+  if (k >= 0 && (!state.story || wasRead(state.story))) tell(state.queue.splice(k, 1)[0].e);
+  return t - (state.story?.born ?? -1e9) < PING_MS;
+}
+
+function tell(e) {
+  endStory();
+  openCard(e, true);
+  drift(e);
+  const st = { e, fromPlay: state.playing, born: performance.now(), left: currentReel().stops.has(e) ? FEATURE_MS : NOTE_MS };
+  st.total = st.left;
+  state.story = st;
+  runStory(st);
+}
+
+// stories that open during playback live on playback time: pausing freezes them
+function runStory(st) {
+  st.paused = false;
+  st.due = performance.now() + st.left;
+  st.timer = setTimeout(() => state.story === st && closeCard(), st.left);
+}
+function freezeStory(st) {
+  clearTimeout(st.timer);
+  st.left = Math.max(0, st.due - performance.now());
+  st.paused = true;
+}
+function endStory() {
+  if (state.story) clearTimeout(state.story.timer);
+  state.story = null;
+}
+
+// the line from the card to its event's pin, drawn under the pins and the card:
+// an s-curve leaving the pin sideways (upwards on a phone, where the card is below)
+const PING_MS = 2200;
+function drawTether() {
+  const e = state.selected, card = $("card");
+  if (!e || card.hidden) return;
+  const at = screenAt(e.lon, e.lat, 0.12);
+  if (!at) return;
+  const [x, y] = at, r = card.getBoundingClientRect(), phone = innerWidth < 600;
+  if (x > r.left - 12 && x < r.right + 12 && y > r.top - 12 && y < r.bottom + 12) return; // under the card
+  const ax = phone ? clamp(x, r.left + 28, r.right - 28) : x < r.left ? r.left : r.right;
+  const ay = phone ? (y < r.top ? r.top : r.bottom) : clamp(y, r.top + 30, Math.min(r.bottom, r.top + 220) - 10);
+  const color = colors.kinds?.[e.kind] ?? colors.accent;
+  ctx.save();
+  ctx.strokeStyle = ctx.fillStyle = color;
+  ctx.lineWidth = 1.6;
+  ctx.globalAlpha = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  if (phone) ctx.bezierCurveTo(x, (y + ay) / 2, ax, (y + ay) / 2, ax, ay);
+  else ctx.bezierCurveTo((x + ax) / 2, y, (x + ax) / 2, ay, ax, ay);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.arc(ax, ay, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  // a new story rings out from its pin
+  const age = (performance.now() - (state.story?.e === e ? state.story.born : -1e9)) / PING_MS;
+  for (const lag of [0, 0.3]) {
+    const t = age - lag;
+    if (t <= 0 || t >= 0.7) continue;
+    ctx.globalAlpha = 1 - t / 0.7;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, 10 + 46 * (t / 0.7), 0, Math.PI * 2);
+    ctx.stroke();
   }
-  state.ghosts = state.ghosts.filter((g) => g.until > t);
-  return state.ghosts.length > 0;
-}
-
-const firstSentence = (text, max) => {
-  const first = text.match(/^.{20,}?[.!?](?=\s+[A-Z]|$)/)?.[0] ?? text;
-  return first.length > max ? `${first.slice(0, max - 1).replace(/\s+\S*$/, "")}…` : first;
-};
-
-function addNote(e, s) {
-  if (state.notes.some((n) => n.e === e)) return;
-  const feature = featured(e), el = document.createElement("div");
-  el.className = feature ? "note feature" : "note";
-  el.style.setProperty("--kind", `var(--k-${e.kind}, var(--accent))`);
-  el.innerHTML = `<span class="leader" hidden></span><span class="ping"></span><button class="bubble"><img alt="" hidden><span class="text"><small></small><b></b><span class="line"></span></span></button>`;
-  el.querySelector("small").innerHTML = kindSvg(e.kind);
-  el.querySelector("small").append(`${e.approx ? "c. " : ""}${fmt(e.start)} · ${e.kind}`);
-  el.querySelector("b").textContent = e.title;
-  if (s?.type === "standard") el.querySelector(".line").textContent = firstSentence(s.extract, feature ? 230 : 130);
-  const img = el.querySelector("img");
-  if (s?.thumbnail) { // the image box has a fixed size, so loading it doesn't move anything
-    img.src = s.thumbnail.source;
-    img.hidden = false;
-    img.onerror = () => { img.remove(); note.w = bubble.offsetWidth; note.h = bubble.offsetHeight; invalidate(); };
-  }
-  el.querySelector("button").onclick = () => openCard(e);
-  $("notes").append(el);
-  const bubble = el.querySelector("button");
-  // notes that pop up during playback live on playback time: pausing freezes them
-  const note = {
-    e, el, bubble, leader: el.querySelector(".leader"), w: bubble.offsetWidth, h: bubble.offsetHeight,
-    spot: 0, fromPlay: state.playing, left: feature ? FEATURE_MS : NOTE_MS, born: performance.now(),
-  };
-  runNote(note);
-  state.notes.push(note);
-  placeNotes();
-  invalidate();
-}
-
-function runNote(note) {
-  note.due = performance.now() + note.left;
-  note.timer = setTimeout(() => dismiss(note), note.left);
-  note.el.classList.remove("paused");
-}
-function freezeNote(note) {
-  clearTimeout(note.timer);
-  note.left = Math.max(0, note.due - performance.now());
-  note.el.classList.add("paused");
-}
-
-function dismiss(note, now = false) {
-  clearTimeout(note.timer);
-  state.notes = state.notes.filter((n) => n !== note);
-  // a fading note can't follow the map, so it goes at once while the camera moves
-  if (now || state.flight || goal || fling || drag?.moved || pinch) note.el.remove();
-  else {
-    if (!note.el.hidden && !note.bubble.hidden) state.ghosts.push({ box: rectOf(note.bubble), until: performance.now() + 300 });
-    note.el.classList.add("out");
-    setTimeout(() => note.el.remove(), 250);
-  }
-  invalidate();
-}
-
-// where a bubble may sit, relative to its pin: above, below, beside and on the
-// diagonals, close in first and then further out (with a leader line back)
-function spots(w, h) {
-  const out = [];
-  for (const d of [14, 42, 84, 140, 200]) {
-    const q = d * 0.7;
-    out.push([-w / 2, -d - h], [-w / 2, d], [d, -h / 2], [-d - w, -h / 2],
-      [q, -q - h], [-q - w, -q - h], [q, q], [-q - w, q]);
-  }
-  return out;
-}
-
-const overlaps = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
-const rectOf = (el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; };
-
-// does the line from (x0, y0) to (x1, y1) pass through any of the boxes?
-function crosses(x0, y0, x1, y1, boxes) {
-  const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 6);
-  for (let i = 1; i < steps; i++) {
-    const x = x0 + ((x1 - x0) * i) / steps, y = y0 + ((y1 - y0) * i) / steps;
-    if (boxes.some((b) => x > b[0] && x < b[2] && y > b[1] && y < b[3])) return true;
-  }
-  return false;
-}
-
-// lay out the notes. notes whose places nearly coincide on screen share one stack
-// of bubbles. each stack, oldest first, takes the first spot that's on screen and
-// clear of the other bubbles, every ping and the controls, without its leader line
-// cutting through another bubble. a stack keeps its spot while it's still free, so
-// bubbles don't hop around; with nowhere to go only the pings show. a note whose
-// place is off screen waits hidden until it comes into view
-function placeNotes() {
-  const W = innerWidth, H = innerHeight, pad = 8, gap = 8; // gap: between bubbles, stacked or not
-  const blocked = [rectOf($("top")), rectOf(document.querySelector("footer"))];
-  if (!$("card").hidden) blocked.push(rectOf($("card")));
-  for (const g of state.ghosts) blocked.push(g.box);
-  if (!$("explore").hidden) blocked.push(rectOf($("explore")));
-  const at = state.notes.map((n) => screenAt(n.e.lon, n.e.lat) ?? [-1e4, -1e4]); // behind the globe: off screen
-  const pings = at.map(([x, y]) => [x - 11, y - 11, x + 11, y + 11]);
-  const stacks = [];
-  state.notes.forEach((n, i) => {
-    const [x, y] = at[i];
-    n.el.hidden = x < 0 || x > W || y < 0 || y > H;
-    if (n.el.hidden) return;
-    n.el.style.transform = `translate(${x}px, ${y}px)`;
-    n.leader.hidden = true;
-    const near = stacks.find((st) => Math.hypot(at[st[0]][0] - x, at[st[0]][1] - y) < 34);
-    near ? near.push(i) : stacks.push([i]);
-  });
-
-  const placed = [];
-  for (const st of stacks) {
-    const host = state.notes[st[0]], [x, y] = at[st[0]];
-    const w = Math.max(...st.map((i) => state.notes[i].w));
-    const h = st.reduce((sum, i) => sum + state.notes[i].h, 0) + gap * (st.length - 1);
-    const all = spots(w, h);
-    let found = null;
-    for (const k of [host.spot, ...all.keys()]) {
-      const left = clamp(x + all[k][0], pad, W - w - pad), top = clamp(y + all[k][1], pad, H - h - pad);
-      const box = [left, top, left + w, top + h], clear = [left - gap, top - gap, left + w + gap, top + h + gap];
-      if ([...blocked, ...pings].some((b) => overlaps(box, b)) || placed.some((b) => overlaps(clear, b))) continue;
-      const ex = clamp(x, left, left + w), ey = clamp(y, top, top + h);
-      if (crosses(x, y, ex, ey, placed)) continue;
-      found = { k, box, ex, ey };
-      break;
-    }
-    for (const i of st) state.notes[i].bubble.hidden = !found;
-    if (!found) continue;
-    host.spot = found.k;
-    placed.push(found.box);
-    let top = found.box[1];
-    for (const i of st) { // stacked bubbles share the stack's width
-      const n = state.notes[i];
-      n.bubble.style.width = st.length > 1 ? `${w}px` : "";
-      n.bubble.style.left = `${found.box[0] - at[i][0]}px`;
-      n.bubble.style.top = `${top - at[i][1]}px`;
-      top += n.h + gap;
-    }
-    // a leader line from the ping to the nearest edge of a stack that's wandered off
-    const dx = found.ex - x, dy = found.ey - y, len = Math.hypot(dx, dy);
-    if (len > 22) {
-      host.leader.hidden = false;
-      host.leader.style.width = `${len - 7}px`;
-      host.leader.style.transform = `rotate(${Math.atan2(dy, dx)}rad) translateX(7px)`;
-    }
-  }
+  ctx.restore();
 }
 
 // --- timeline & playback ---------------------------------------------------------------
 
 function buildTicks() {
-  for (const y of [-5000, -4000, -3000, -2000, -1000, 1, 500, 1000, 1500, 2000]) {
+  for (const y of [-3000, -2000, -1000, 1, 500, 1000, 1500, 2000]) {
     const s = document.createElement("span");
-    s.className = [-5000, -3000, -1000, 1000, 2000].includes(y) ? "era" : "era minor";
+    s.className = [-2000, 500, 1500].includes(y) ? "era minor" : "era";
     s.style.left = `${toPos(y) * 100}%`;
-    s.textContent = y === 1 ? "0" : y < 0 ? `${-y} bce` : y;
+    s.textContent = y === 1 ? "1 ce" : y < 0 ? `${-y} bce` : y;
     if (y === MIN_YEAR) s.classList.add("start");
     $("ticks").append(s);
   }
+}
+
+// along the track, how much happened when: a bar for every few pixels, as tall as the
+// (log of the) weight of the events in it, and only what's in focus during a focus.
+// the stretch already played is in the accent colour
+const density = { bins: null };
+function drawDensity() {
+  const cv = $("density"), w = cv.clientWidth, h = cv.clientHeight, r = devicePixelRatio || 1;
+  if (!w || !state.events.length) return;
+  if (!density.bins || density.w !== w || density.focus !== state.focus) {
+    const n = Math.floor(w / 3), bins = new Float32Array(n);
+    for (const e of state.events) {
+      if (e.start < MIN_YEAR || e.start > MAX_YEAR || !inFocus(e)) continue;
+      bins[Math.min(n - 1, Math.floor(toPos(e.start) * n))] += Math.min(e.weight, 400);
+    }
+    const top = Math.log1p(Math.max(...bins) / 20);
+    Object.assign(density, { bins: bins.map((v) => (v ? Math.max(0.06, Math.log1p(v / 20) / top) : 0)), w, focus: state.focus });
+    fitCanvas(cv, Math.round(w * r), Math.round(h * r));
+  }
+  const c = cv.getContext("2d"), { bins } = density, bw = w / bins.length, played = state.pos * bins.length;
+  c.setTransform(r, 0, 0, r, 0, 0);
+  c.clearRect(0, 0, w, h);
+  for (let i = 0; i < bins.length; i++) {
+    if (!bins[i]) continue;
+    c.fillStyle = i < played ? colors.accent : colors.ink;
+    c.globalAlpha = i < played ? 0.55 : 0.2;
+    const bh = Math.max(1.5, bins[i] * h);
+    c.fillRect(i * bw, h - bh, bw - 1, bh);
+  }
+  c.globalAlpha = 1;
+}
+
+// hovering the track shows the year under the pointer
+$("track").addEventListener("pointermove", (ev) => {
+  if (ev.pointerType !== "mouse") return;
+  const p = trackPos(ev), peek = $("peek");
+  peek.style.left = `${p * 100}%`;
+  peek.dataset.year = fmt(roundYear(toYear(p)));
+  peek.hidden = false;
+});
+$("track").addEventListener("pointerleave", () => ($("peek").hidden = true));
+
+// the year in the dock: big numerals, the era small
+function showYear(y) {
+  const out = $("year");
+  out.textContent = y < 0 ? (-y).toLocaleString() : y;
+  out.append(Object.assign(document.createElement("small"), { textContent: y < 0 ? "bce" : "ce" }));
 }
 
 let hashTimer = 0;
@@ -1209,10 +1197,11 @@ function applyYear(year) {
   const prev = state.year;
   state.year = year;
   $("handle").style.left = `${state.pos * 100}%`;
+  drawDensity();
   invalidate();
   if (year === prev && state.wanted !== null) return;
 
-  $("year").textContent = fmt(year);
+  showYear(year);
   $("track").setAttribute("aria-valuetext", fmt(year));
   clearTimeout(hashTimer);
   hashTimer = setTimeout(() => { try { history.replaceState(null, "", `#${state.year}`); } catch {} }, 250);
@@ -1243,7 +1232,8 @@ function setPlaying(on) {
   if (on && state.focus && state.year >= state.focus.to) setYear(state.focus.from); // replay the focus
   else if (on && state.pos >= 1) setYear(MIN_YEAR); // replay from the start
   if (on !== state.playing) {
-    for (const n of state.notes) if (n.fromPlay) on ? runNote(n) : freezeNote(n);
+    const st = state.story;
+    if (st?.fromPlay) on ? runStory(st) : freezeStory(st);
   }
   state.playing = on;
   $("play").setAttribute("aria-pressed", on);
@@ -1254,10 +1244,10 @@ function setPlaying(on) {
 // playback slows while a fresh note is being read, and nearly stops at a guided stop
 function stepPlay(dt) {
   if (!state.playing) return false;
-  const t = performance.now(), fresh = state.notes.some((n) => n.fromPlay && t - n.born < 3000);
-  const target = state.stop ? 0.04 : fresh ? 0.35 : 1;
-  state.ease += (target - state.ease) * (1 - Math.exp(-dt * (target < state.ease ? 6 : 1.5)));
+  const t = performance.now(), fresh = !!state.story?.fromPlay && t - state.story.born < 1200;
   const rate = state.focus ? state.focus.rate : PACE;
+  const target = state.stop || holding(rate) ? 0.04 : fresh ? 0.5 : 1;
+  state.ease += (target - state.ease) * (1 - Math.exp(-dt * (target < state.ease ? 6 : 4)));
   setPos(toPos(lgShift(toYear(state.pos), dt * rate * state.speed * state.ease)));
   stepStop(dt);
   if (state.pos >= 1 || (state.focus && state.year >= state.focus.to)) setPlaying(false);
@@ -1435,7 +1425,7 @@ canvas.addEventListener("wheel", (ev) => {
 for (const b of document.querySelectorAll("#zoom button")) {
   b.onclick = () => {
     userSteers();
-    const { cx, cy } = globeArea(), z = b.dataset.zoom;
+    const { cx, cy } = globe.on ? globeArea() : mapArea(), z = b.dataset.zoom;
     if (z === "fit") {
       if (globe.on) { globe.goalK = 1; viewChanged(); }
       else zoomAt(cx, cy, minZoom / (goal ?? view).k);
@@ -1512,11 +1502,18 @@ function realmArticle(name, year) {
   return realmArticles.get(clean);
 }
 
-function fillCard({ meta, title, related = [] }) {
-  const card = $("card"), img = card.querySelector("img"), desc = card.querySelector(".desc");
-  card.querySelector(".meta").textContent = meta;
+function fillCard({ meta, title, related = [], kind }) {
+  const card = $("card"), img = card.querySelector("img"), desc = card.querySelector(".desc"), m = card.querySelector(".meta");
+  m.textContent = meta;
+  if (kind) { // an event: its kind, in its colour, then when
+    m.innerHTML = `${kindSvg(kind)}<span class="kind-name"></span><span class="when"></span>`;
+    m.querySelector(".kind-name").textContent = kind;
+    m.querySelector(".when").textContent = meta;
+  }
+  card.style.setProperty("--kind", kind ? `var(--k-${kind})` : "var(--accent)");
   card.querySelector("h2").textContent = title;
   card.querySelector(".wiki").hidden = true;
+  img.onload = img.onerror = null; // the last card's picture may still be loading
   img.hidden = true;
   img.removeAttribute("src");
   desc.textContent = "loading…";
@@ -1532,10 +1529,17 @@ function fillCard({ meta, title, related = [] }) {
     return li;
   }));
   card.querySelector(".related-wrap").hidden = !related.length;
+  if (card.hidden || card.dataset.title !== title) {
+    card.animate([{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }], { duration: 280, easing: "ease-out" });
+  }
+  card.dataset.title = title;
   card.hidden = false;
   card.scrollTop = 0;
   invalidate();
 }
+
+// the card's picture: 500px wide where the original is big enough
+const cardImage = (s) => s?.thumbnail && ((s.originalimage?.width ?? 0) >= 500 ? s.thumbnail.source.replace(/\/\d+px-/, "/500px-") : s.thumbnail.source);
 
 function fillSummary(s, url) {
   const card = $("card"), img = card.querySelector("img"), desc = card.querySelector(".desc"), a = card.querySelector(".wiki");
@@ -1547,16 +1551,18 @@ function fillSummary(s, url) {
   else a.removeAttribute("href");
   a.hidden = !link;
   if (s?.thumbnail) {
-    const big = (s.originalimage?.width ?? 0) >= 500 ? s.thumbnail.source.replace(/\/\d+px-/, "/500px-") : null;
+    const big = cardImage(s) === s.thumbnail.source ? null : cardImage(s);
     img.onerror = () => { if (big && img.src !== s.thumbnail.source) img.src = s.thumbnail.source; else img.hidden = true; };
-    img.onload = () => (img.hidden = false);
+    img.onload = () => { img.hidden = false; invalidate(); }; // the tether follows the card's size
     img.src = big ?? s.thumbnail.source;
   }
 }
 
-async function openCard(e) {
+// an event's card: told by the reel (story), or opened by the reader, which ends any story
+async function openCard(e, story = false) {
+  if (!story) endStory();
   const when = e.end ? `${fmt(e.start)} – ${fmt(e.end)}` : fmt(e.start);
-  fillCard({ meta: `${e.approx ? "c. " : ""}${when} · ${e.kind}`, title: e.title });
+  fillCard({ meta: `${e.approx ? "c. " : ""}${when}`, title: e.title, kind: e.kind });
   state.selected = e;
   state.selectedRealm = null;
   if (!e.wiki) return fillSummary(null);
@@ -1575,6 +1581,7 @@ async function openRealm(f) {
     .slice(0, 6) // heaviest first already
     .sort((a, b) => a.start - b.start);
   const under = (f.subject && f.subject !== f.name ? ` · under ${f.subject}` : "") + (f.rough ? " · borders approximate" : "");
+  endStory();
   fillCard({ meta: `${fmt(from)} – ${fmt(until)}${under}`, title: f.name, related: inside });
   state.selected = null;
   state.selectedRealm = f;
@@ -1584,11 +1591,14 @@ async function openRealm(f) {
 }
 
 function closeCard() {
+  endStory();
   $("card").hidden = true;
   state.selected = state.selectedRealm = null;
   invalidate();
 }
 $("close").onclick = closeCard;
+// touching a story keeps it: it becomes the reader's card
+$("card").addEventListener("pointerdown", () => endStory());
 addEventListener("keydown", (ev) => ev.key === "Escape" && closeCard());
 
 // --- boot --------------------------------------------------------------------------
@@ -1608,7 +1618,7 @@ addEventListener("keydown", (ev) => ev.key === "Escape" && closeCard());
   readColors();
   buildTicks();
   addEventListener("resize", resize);
-  dark.addEventListener("change", () => { readColors(); viewChanged(); });
+  dark.addEventListener("change", () => { readColors(); drawDensity(); viewChanged(); });
   resize();
   const fromHash = () => {
     const y = parseInt(location.hash.slice(1), 10);
@@ -1617,4 +1627,5 @@ addEventListener("keydown", (ev) => ev.key === "Escape" && closeCard());
   addEventListener("hashchange", fromHash);
   fromHash();
   restoreGlobe();
+  (window.requestIdleCallback ?? setTimeout)(() => currentReel()); // chosen ahead of the first play
 })();

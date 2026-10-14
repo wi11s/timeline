@@ -1,6 +1,6 @@
 # world timeline
 
-an interactive map of human history: borders, wars and major events, scrubbed through time. ~7,000 events (including some 480 works of art) and 54 border snapshots from 5000 bce to today, no dependencies and no build step.
+an interactive map of human history: borders, wars and major events, scrubbed through time. ~7,000 events (including some 480 works of art) and border snapshots from 3000 bce to today, no dependencies and no build step.
 
 it's open source and contributions are very welcome, whether that's fixing a date, adding an event, or working on the map itself. you don't need to know javascript to help.
 
@@ -16,7 +16,7 @@ python3 -m http.server     # then open http://localhost:8000
 
 any static file server works (`npx serve` too). there's nothing to install: the viewer is plain html, css and javascript, and the python scripts only use the standard library.
 
-**using it:** press play (or space) to watch history unfold; the button next to it sets the speed. with **guided** on, the camera flies in to the biggest moments and holds there while you read, then pulls back out. **explore** offers stories (the roman empire, the mongols, the world wars…) and regions: each flies to the right part of the world and plays its own stretch of time, slower, with smaller events too. drag or scroll over the timeline to scrub, or use ←/→ (shift jumps between border snapshots). pinch or use a mouse wheel to zoom the map, double-click to zoom in, and drag (or two-finger scroll on a trackpad) to pan. the globe button (or `g`) switches to a 3d globe and back, keeping the same place in view. click a pin or a notification for a summary and photo from wikipedia, or click a territory to see what it was and the biggest events inside its borders. the url holds the year, so you can link to a moment: `/#1453`, `/#-500`.
+**using it:** press play (or space) to watch history unfold, one story at a time: each opens in the card on the right, joined by a line to its place on the map; the buttons at the end of the timeline set the speed and guided mode. the timeline shows how much happened when, and hovering it shows the year under the pointer. the camera follows the stories, turning (or panning) and zooming a little with each; with **guided** on it also flies in to the biggest moments, holding there a moment before pulling back out. **explore** offers stories (the roman empire, the mongols, the world wars…) and regions: each flies to the right part of the world and plays its own stretch of time, slower, with smaller events too. drag or scroll over the timeline to scrub, or use ←/→ (shift jumps between border snapshots). pinch or use a mouse wheel to zoom the map, double-click to zoom in, and drag (or two-finger scroll on a trackpad) to pan. it opens on a 3d globe; the flat map button (or `g`) switches to the flat map and back, keeping the same place in view. click a pin for a summary and photo from wikipedia, or click a territory to see what it was and the biggest events inside its borders. **search** (or `/`) finds events by name or by year (`1066`, `44 bce`): pick one and the map jumps to that year, flies there and opens it. the url holds the year, so you can link to a moment: `/#1453`, `/#-500`.
 
 ## ways to help
 
@@ -42,7 +42,7 @@ the fields are described under [events](#events) below. a few tips:
 
 ### add a story or a region
 
-focuses live in [`data/focuses.json`](data/focuses.json): a title, a one-line blurb, the years (`from`, `to`), where to look (`lon`, `lat`, and `zoom`, where 1 is the whole world), and optionally a `box` of `[west, south, east, north]` to limit the events to. `group` is `stories` or `regions`, `seconds` sets how long it plays at 1× (90 by default), and `kinds` (optional) limits it to some kinds of event, like `["art"]`. a focus picks its notes in advance, about one per 4½ seconds of playback, taking the most important event in each stretch, so something is always happening; its four biggest picks become guided stops. the guided stops are the events with `importance: 1` in `events.json`, plus anything covered by 150+ wikipedias.
+focuses live in [`data/focuses.json`](data/focuses.json): a title, a one-line blurb, the years (`from`, `to`), where to look (`lon`, `lat`, and `zoom`, where 1 is the whole world), and optionally a `box` of `[west, south, east, north]` to limit the events to. `group` is `stories` or `regions`, `seconds` sets how long it plays at 1× (90 by default), and `kinds` (optional) limits it to some kinds of event, like `["art"]`. a focus picks its own reel of stories in advance from just its events (see stories below), so something is always happening, and its strongest picks become guided stops.
 
 ### fix the data at the source
 
@@ -80,6 +80,7 @@ small, focused prs are easiest to review. one event or one fix per pr is great.
 index.html style.css app.js   the viewer
 globe.js                      the 3d globe (webgl2, no library)
 story.js                      camera flights, guided stops, focuses
+search.js                     the search box: matching events by name or year
 data/focuses.json             the stories and regions in "explore"
 data/events.json              hand-curated events (edit these)
 data/events-wikidata.json     events generated from wikidata (don't edit, regenerate)
@@ -100,18 +101,18 @@ apple-touch-icon.png          if the map's look changes a lot
 
 `app.js` is organised in sections, top to bottom:
 
-- **projection and time scale.** the map uses the equal earth projection. the timeline is linear from 5000 bce, but playback speed, how long pins linger and scrolling to scrub all run on a log scale of years before present, so playback sweeps through antiquity and slows down for the densely recorded modern era.
+- **projection and time scale.** the map uses the equal earth projection. the timeline is linear from 3000 bce, but playback speed, how long pins linger and scrolling to scrub all run on a log scale of years before present, so playback sweeps through antiquity and slows down for the densely recorded modern era.
 - **data.** loads border snapshots on demand and merges the two event files, ranking events by how many wikipedia language editions cover them.
 - **view.** smooth zoom, pinch, panning with momentum. only realms on screen are drawn, and the water lines (the slowest part) wait until the map stops moving.
 - **border transitions.** when the snapshot changes, both maps are rasterised and each changed pixel flips once the new owner's "front" reaches it, so empires visibly grow and shrink instead of popping.
 - **rendering.** an old-atlas style: realm tints, water lines along coasts, ocean names, labels sized to their realm. everything except the pins is cached between frames.
 - **physical geography.** shaded relief blended into the realm tints (soft-light, so flat land is untouched), rivers and lakes that fill in as you zoom, and mountain ranges and deserts lettered along their length. it loads after the map and works the same in every year.
-- **notifications.** events queue for a note as the timeline passes them, and appear when there's a free slot (three at most, two on a phone), with a photo and a line from wikipedia fetched while they wait. they never push each other off, and an event that's waited too long is dropped. playback slows while a new note is fresh. notes are laid out to avoid each other, the controls, and notes still fading out.
+- **stories: the reel.** one story is told at a time, in the card, so what plays is chosen in advance (`buildReel` in `story.js`): greedily, the most interesting event that still fits, at least `REEL_S` seconds of playback from every other pick. interest is how many wikipedias cover the event (scaled up for older eras), with routine "x founded" entries marked down and the hand-picked turning points in `events.json` always near the top; a pick that would repeat the kind or the part of the world of the picks either side of it counts for less, so the reel keeps moving around the world. the event marked `finale` is always the last story, with nothing picked after it. the strongest picks, `STOP_S` apart, are guided stops, which the camera flies to (and which stay up longer). playback eases while a story is fresh and holds back from the next pick until the current one has been read (`holding()` in `app.js`), so busy stretches of history slow down and quiet ones fly by. summaries for the next few picks are fetched ahead. a line (`drawTether`) joins the card to the event's pin. a card the reader opens, or touches, stays until they close it, and the reel lets it be.
 - **territories.** hovering outlines a territory and clicking opens its card. realm names come from the border data, so the wikipedia article is found by title, then by a cautious search. when it picks wrong or finds nothing, add the name to `REALM_ARTICLES` in `app.js`.
 - **timeline and playback.**
 - **map interaction and the event card.** descriptions and photos come from wikipedia's page summary api, fetched in the browser.
 
-`globe.js` is the 3d view. there's no 3d library: a webgl2 fragment shader works out which longitude and latitude each pixel of the disc is looking at, and samples a plain longitude/latitude picture of the map, painted in the same atlas style whenever the borders change (old and new cross-fade). labels, pins and notes are still drawn by `app.js` on the 2d canvas on top, placed with `globeScreen()` instead of the flat projection, so everything else works the same in both views.
+`globe.js` is the 3d view. there's no 3d library: a webgl2 fragment shader works out which longitude and latitude each pixel of the disc is looking at, and samples a plain longitude/latitude picture of the map, painted in the same atlas style whenever the borders change (old and new cross-fade). labels, pins and the card's line are still drawn by `app.js` on the 2d canvas on top, placed with `globeScreen()` instead of the flat projection, so everything else works the same in both views.
 
 colours, the realm palette and typography are css variables at the top of `style.css`.
 
@@ -142,8 +143,9 @@ colours, the realm palette and typography are css variables at the top of `style
 | `wiki`       | string? | english wikipedia url; powers the description and photo      |
 | `qid`        | string? | wikidata item (generated events)                             |
 | `sitelinks`  | int?    | how many wikipedia language editions cover it; ranks events  |
+| `finale`     | bool?   | the last story playback tells (one event, in `events.json`)  |
 
-an event shows on the map from its start until its end, then lingers (fading) for a short stretch of timeline. events covered by 80+ wikipedia editions pop a notification. curated events override their wikidata twins (matched by wikipedia url) but borrow their `sitelinks`.
+an event shows on the map from its start until its end, then lingers (fading) for a short stretch of timeline. the most interesting of them play as stories (see the reel, above). curated events override their wikidata twins (matched by wikipedia url) but borrow their `sitelinks`.
 
 ### borders
 
