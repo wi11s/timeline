@@ -84,13 +84,15 @@ function hash(name) {
 
 function prepare(geojson) {
   const feats = geojson.features.map(({ properties: p, geometry }) => {
-    const path = new Path2D();
+    const path = new Path2D(), box = [Infinity, Infinity, -Infinity, -Infinity];
     let best = { area: 0 };
     for (const poly of geometry.coordinates) {
       poly.forEach((ring, i) => {
         let area = 0, cx = 0, cy = 0, prev = null;
         for (const [lon, lat] of ring) {
           const pt = project(lon, lat);
+          box[0] = Math.min(box[0], pt[0]); box[1] = Math.min(box[1], pt[1]);
+          box[2] = Math.max(box[2], pt[0]); box[3] = Math.max(box[3], pt[1]);
           if (prev) {
             const cross = prev[0] * pt[1] - pt[0] * prev[1];
             area += cross; cx += (prev[0] + pt[0]) * cross; cy += (prev[1] + pt[1]) * cross;
@@ -104,7 +106,7 @@ function prepare(geojson) {
         }
       });
     }
-    return { name: p.name, path, label: best, realm: p.name ? hash(p.name) % REALMS : null };
+    return { name: p.name, path, box, label: best, realm: p.name ? hash(p.name) % REALMS : null };
   });
   feats.coast = new Path2D(); // every outline at once, for the water lines
   for (const f of feats) feats.coast.addPath(f.path);
@@ -156,7 +158,6 @@ function resize() {
   if (minZoom < 1 && view.k === 1 && view.x === 0) view.x = -project(20, 0)[0] * s; // centre on europe/africa
   clampView(view);
   layerDirty = true;
-  calibrate = 3;
   viewChanged();
 }
 
@@ -325,7 +326,7 @@ function startTransition(from, to) {
   flood(sweep, false);
 
   const fast = state.playing ? 1 / Math.sqrt(state.speed) : 1;
-  if (!sameView(coastView, view)) renderCoast(from); // the water lines underneath
+  if (!sameView(coastView, view) || !coastLines) renderCoast(from); // the water lines underneath
   state.transition = {
     a, b, dist, changed: Int32Array.from(changed), maxD,
     out: new ImageData(b.slice(), W, H),
@@ -398,9 +399,21 @@ const fillOf = (f) => (f.realm === null ? colors.land : colors.realms[f.realm]);
 // water lines: thin rings following every coast, as on an engraved map. each
 // ring is a wide stroke in ink with a stroke 1px narrower in sea colour on top;
 // then a little shading along the shore. expects the map transform to be set
+// zoomed in, most of the world is off screen: skip it. `pad` covers the water lines
+function onScreen(f, pad = 24) {
+  const s = base.s * view.k, x = base.x + view.x, y = base.y + view.y, b = f.box;
+  return x + b[2] * s > -pad && x + b[0] * s < innerWidth + pad && y + b[3] * s > -pad && y + b[1] * s < innerHeight + pad;
+}
+
 function paintCoast(c, feats) {
   if (!feats.coast) return;
   const s = base.s * view.k, spread = clamp(Math.sqrt(s / 260), 0.4, 1); // tighter on a small map
+  const shown = feats.filter((f) => onScreen(f));
+  let path = feats.coast;
+  if (shown.length < feats.length) {
+    path = new Path2D();
+    for (const f of shown) path.addPath(f.path);
+  }
   const strokes = [];
   for (const r of [18, 10.5]) strokes.push([r * spread, colors.coast, 1], [r * spread - 1, colors.bg, 1]);
   strokes.push([5 * spread, colors.coast, 0.35]);
@@ -409,7 +422,7 @@ function paintCoast(c, feats) {
     c.globalAlpha = a;
     c.strokeStyle = color;
     c.lineWidth = w / s;
-    c.stroke(feats.coast);
+    c.stroke(path);
   }
   c.globalAlpha = 1;
 }
@@ -417,6 +430,7 @@ function paintCoast(c, feats) {
 function paintLand(c, feats, coast = true) {
   if (coast) paintCoast(c, feats);
   for (const f of feats) {
+    if (!onScreen(f)) continue;
     c.fillStyle = fillOf(f);
     c.fill(f.path);
   }
@@ -426,7 +440,7 @@ function strokeBorders(c, feats, alpha) {
   c.globalAlpha = alpha;
   c.lineWidth = 0.7 / (base.s * view.k);
   c.strokeStyle = colors.line;
-  for (const f of feats) c.stroke(f.path);
+  for (const f of feats) if (onScreen(f)) c.stroke(f.path);
   c.globalAlpha = 1;
 }
 
@@ -457,7 +471,7 @@ function drawLabels(c, feats, alpha) {
   c.textAlign = "center";
   c.textBaseline = "middle";
   c.lineJoin = "round";
-  const big = feats.filter((f) => f.name && f.label.area * scale * scale > 1600);
+  const big = feats.filter((f) => f.name && f.label.area * scale * scale > 1600 && onScreen(f, 0));
   for (const f of big.sort((a, b) => b.label.area - a.label.area)) {
     const [x, y] = toScreen([f.label.x, f.label.y]), room = Math.sqrt(f.label.area) * scale * 1.8;
     let size = clamp(Math.sqrt(f.label.area) * scale / 12, 11, 19), caps = size >= 13, text, w;
@@ -489,11 +503,13 @@ function drawLabels(c, feats, alpha) {
 }
 
 // the map without pins is cached between frames, so playback only redraws pins.
-// `coast` holds the sea and water lines alone; transitions draw land over it
+// `coast` holds the sea and water lines alone; transitions draw land over it.
+// the water lines are the slow part, so a map that's being panned or zoomed is
+// drawn without them, and they come back once it settles
 const layer = document.createElement("canvas"), lctx = layer.getContext("2d");
 const coast = document.createElement("canvas"), cctx = coast.getContext("2d");
-let layerDirty = true, layerView = null, coastView = null;
-let lastMove = 0, renderMs = 0, calibrate = 3, settleTimer = 0;
+let layerDirty = true, layerView = null, layerLines = false, coastView = null, coastLines = false;
+let lastMove = 0, settleTimer = 0;
 const SETTLE_MS = 160;
 const sameView = (a, b) => !!a && a.k === b.k && a.x === b.x && a.y === b.y;
 
@@ -504,19 +520,19 @@ function fit(c) {
   }
 }
 
-function renderCoast(feats) {
+function renderCoast(feats, lines = true) {
   fit(coast);
   cctx.setTransform(1, 0, 0, 1, 0, 0);
   cctx.fillStyle = colors.bg; // the ocean goes on past the edge of the screen
   cctx.fillRect(0, 0, coast.width, coast.height);
   cctx.setTransform(...transform());
-  paintCoast(cctx, feats);
+  if (lines) paintCoast(cctx, feats);
   coastView = { ...view };
+  coastLines = lines;
 }
 
-function renderLayer() {
-  const t0 = performance.now();
-  renderCoast(state.shown ?? []);
+function renderLayer(lines) {
+  renderCoast(state.shown ?? [], lines);
   fit(layer);
   lctx.setTransform(1, 0, 0, 1, 0, 0);
   lctx.drawImage(coast, 0, 0);
@@ -526,30 +542,19 @@ function renderLayer() {
   lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawWaters(lctx);
   drawLabels(lctx, state.shown, 1);
-  if (calibrate > 0) { // reading a pixel waits for the gpu, so the timing is honest
-    calibrate--;
-    lctx.getImageData(0, 0, 1, 1);
-    renderMs = Math.max(renderMs * 0.5, performance.now() - t0);
-  }
   layerView = { ...view };
+  layerLines = lines;
   layerDirty = false;
 }
 
-// the cached map, re-rendered when stale. where rendering is slow, a map that's
-// being panned or zoomed reuses the last render, shifted and scaled, and gets
-// redrawn crisply once it settles
 function drawMap() {
-  const fresh = sameView(layerView, view), settled = performance.now() - lastMove > SETTLE_MS;
-  if (layerDirty || (!fresh && (renderMs < 14 || settled))) renderLayer();
-  if (sameView(layerView, view)) return ctx.drawImage(layer, 0, 0);
-  const f = view.k / layerView.k;
-  ctx.fillStyle = colors.bg;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.setTransform(f, 0, 0, f, (base.x + view.x - (base.x + layerView.x) * f) * dpr, (base.y + view.y - (base.y + layerView.y) * f) * dpr);
+  const moving = performance.now() - lastMove < SETTLE_MS;
+  if (layerDirty || !sameView(layerView, view) || (!moving && !layerLines)) renderLayer(!moving);
   ctx.drawImage(layer, 0, 0);
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  clearTimeout(settleTimer);
-  settleTimer = setTimeout(invalidate, SETTLE_MS + 20);
+  if (!layerLines) { // come back for the water lines
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(invalidate, SETTLE_MS + 20);
+  }
 }
 
 // heaviest events first; lighter ones only where there's room
@@ -867,8 +872,10 @@ function eventAt(x, y, touch = false) {
 }
 
 function polityAt(x, y) {
+  const s = base.s * view.k, wx = (x - base.x - view.x) / s, wy = (y - base.y - view.y) / s;
   ctx.setTransform(...transform());
-  const hit = [...(state.shown ?? [])].reverse().find((f) => ctx.isPointInPath(f.path, x * dpr, y * dpr));
+  const hit = [...(state.shown ?? [])].reverse().find((f) =>
+    wx >= f.box[0] && wx <= f.box[2] && wy >= f.box[1] && wy <= f.box[3] && ctx.isPointInPath(f.path, x * dpr, y * dpr));
   return hit?.name;
 }
 
@@ -941,12 +948,19 @@ function endPointer(ev) {
 canvas.addEventListener("pointerup", endPointer);
 canvas.addEventListener("pointercancel", endPointer);
 
+// a mouse wheel zooms. trackpads give themselves away by scrolling sideways (a
+// wheel only scrolls up and down), and from then on two-finger scrolling pans.
+// pinches arrive as ctrl+wheel on both, and are already smooth
+let trackpad = false;
 canvas.addEventListener("wheel", (ev) => {
   ev.preventDefault();
-  const dy = ev.deltaY * (ev.deltaMode === 1 ? 16 : 1);
-  // trackpad pinches arrive as ctrl+wheel with small deltas and are already smooth
-  if (ev.ctrlKey) zoomAt(ev.clientX, ev.clientY, Math.exp(-dy * 0.01), false);
-  else zoomAt(ev.clientX, ev.clientY, Math.exp(-dy * 0.002));
+  const unit = ev.deltaMode === 1 ? 16 : 1, dx = ev.deltaX * unit, dy = ev.deltaY * unit;
+  if (ev.ctrlKey) return zoomAt(ev.clientX, ev.clientY, Math.exp(-dy * 0.01), false);
+  if (dx !== 0 && !ev.shiftKey && ev.deltaMode === 0) trackpad = true;
+  if (trackpad) {
+    goal = fling = null;
+    panBy(-dx, -dy);
+  } else zoomAt(ev.clientX, ev.clientY, Math.exp(-dy * 0.002));
 }, { passive: false });
 
 canvas.addEventListener("dblclick", (ev) => zoomAt(ev.clientX, ev.clientY, ev.shiftKey ? 0.4 : 2.5));

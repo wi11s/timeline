@@ -16,7 +16,7 @@ python3 -m http.server     # then open http://localhost:8000
 
 any static file server works (`npx serve` too). there's nothing to install: the viewer is plain html, css and javascript, and the python scripts only use the standard library.
 
-**using it:** press play (or space) to watch history unfold; the button next to it sets the speed. drag or scroll over the timeline to scrub, or use ←/→ (shift jumps between border snapshots). scroll or pinch to zoom the map, double-click to zoom in, drag to pan. click a pin or a notification for a summary and photo from wikipedia. the url holds the year, so you can link to a moment: `/#1453`, `/#-500`.
+**using it:** press play (or space) to watch history unfold; the button next to it sets the speed. drag or scroll over the timeline to scrub, or use ←/→ (shift jumps between border snapshots). pinch or use a mouse wheel to zoom the map, double-click to zoom in, and drag (or two-finger scroll on a trackpad) to pan. click a pin or a notification for a summary and photo from wikipedia. the url holds the year, so you can link to a moment: `/#1453`, `/#-500`.
 
 ## ways to help
 
@@ -89,7 +89,7 @@ vercel.json .vercelignore     static hosting config
 
 - **projection and time scale.** the map uses the equal earth projection. the timeline is logarithmic in years before present, so recent centuries get more room than prehistory.
 - **data.** loads border snapshots on demand and merges the two event files, ranking events by how many wikipedia language editions cover them.
-- **view.** smooth zoom, pinch, panning with momentum. on slow devices the map reuses its last frame while moving and redraws when it settles.
+- **view.** smooth zoom, pinch, panning with momentum. only realms on screen are drawn, and the water lines (the slowest part) wait until the map stops moving.
 - **border transitions.** when the snapshot changes, both maps are rasterised and each changed pixel flips once the new owner's "front" reaches it, so empires visibly grow and shrink instead of popping.
 - **rendering.** an old-atlas style: realm tints, water lines along coasts, ocean names, labels sized to their realm. everything except the pins is cached between frames.
 - **notifications.** big events pop a note as the timeline passes them. notes are laid out to avoid each other and the controls.
