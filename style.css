@@ -182,6 +182,7 @@ body.globe { background: var(--space); }
   display: block; width: 100%; height: 190px; object-fit: cover;
   background: var(--line); filter: sepia(.15);
 }
+#card img[hidden] { display: none; } /* until it loads, or when there's none */
 #card .body { padding: 14px 18px 16px; }
 #card h2 { margin: 2px 26px 8px 0; font-size: 23px; font-weight: 500; line-height: 1.15; }
 #card .meta { margin: 0; color: var(--muted); font-size: 14px; font-style: italic; }
@@ -320,11 +321,24 @@ svg.kind.k-art { stroke: var(--k-art); }
   #track { order: 1; flex-basis: 100%; min-height: 52px; } /* last, full width: a comfortable thumb target */
   #ticks .minor { display: none; }
 
-  #card { top: auto; bottom: 146px; left: 10px; right: 10px; width: auto; max-height: 40vh; max-height: 40dvh; }
+  #card {
+    top: auto; bottom: calc(max(10px, env(safe-area-inset-bottom)) + 128px); left: 10px; right: 10px; width: auto;
+    max-height: 50vh; max-height: 50dvh;
+  }
   #card img { height: 110px; }
   #card .body { padding: 11px 15px 13px; }
   #card h2 { font-size: 20px; margin-bottom: 5px; }
-  #card .desc { font-size: 15px; -webkit-line-clamp: 4; line-clamp: 4; }
-  #explore { top: auto; bottom: 146px; left: 10px; right: 10px; width: auto; max-height: 60vh; max-height: 60dvh; }
-  #focus-chip { left: 10px; bottom: 146px; }
+  #card .desc { font-size: 15px; margin-bottom: 6px; -webkit-line-clamp: 4; line-clamp: 4; }
+  /* a story playing: a strip, picture beside the words; tap it for the full card */
+  #card.compact:not([hidden]) { display: flex; gap: 11px; align-items: flex-start; padding: 10px; max-height: 128px; overflow: hidden; }
+  #card.compact img { width: 72px; height: auto; min-height: 64px; align-self: stretch; flex: none; border-radius: 9px; } /* as tall as the words beside it */
+  #card.compact .body { padding: 0; min-width: 0; }
+  #card.compact .meta { font-size: 13px; }
+  #card.compact .meta .kind-name { font-size: 15px; }
+  #card.compact h2 { margin: 1px 30px 3px 0; font-size: 17.5px; line-height: 1.15; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+  #card.compact .desc { margin: 0; font-size: 14px; line-height: 1.3; -webkit-line-clamp: 2; line-clamp: 2; }
+  #card.compact .wiki, #card.compact .related-wrap { display: none; }
+  #card.compact #close { top: 6px; right: 6px; width: 26px; height: 26px; font-size: 18px; box-shadow: none; }
+  #explore { top: auto; bottom: calc(max(10px, env(safe-area-inset-bottom)) + 128px); left: 10px; right: 10px; width: auto; max-height: 60vh; max-height: 60dvh; }
+  #focus-chip { left: 10px; bottom: calc(max(10px, env(safe-area-inset-bottom)) + 128px); }
 }

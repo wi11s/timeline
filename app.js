@@ -182,10 +182,16 @@ function mergeEvents(curated, wikidata) {
 let dpr = 1, base = { s: 1, x: 0, y: 0 }, minZoom = 1;
 const dockSpace = () => (innerWidth < 600 ? 136 : 92); // the timeline dock along the bottom
 
-// the flat map's part of the screen: above the dock and, on a wide screen, left of the
-// card's column, so a story never covers the map it's about
-const CARD_COLUMN = 377;
+// the map's part of the screen, so a story never covers the map it's about: above the
+// dock and, on a wide screen, left of the card's column; on a phone, between the top
+// buttons and the (compact) story card, which sits just above the dock there
+const CARD_COLUMN = 377, CARD_STRIP = 128;
 function mapArea() {
+  if (innerWidth < 600) {
+    const dock = document.querySelector("footer").getBoundingClientRect().top || innerHeight - dockSpace();
+    const top = 58, h = Math.max(160, dock - 10 - CARD_STRIP - 8 - top);
+    return { cx: innerWidth / 2, cy: top + h / 2, w: innerWidth, h };
+  }
   const side = innerWidth >= 1000 ? CARD_COLUMN : 0, h = innerHeight - dockSpace();
   return { cx: (innerWidth - side) / 2, cy: h / 2 + 8, w: innerWidth - side, h };
 }
@@ -214,7 +220,7 @@ function resize() {
 
 // keep the point under the middle of the map's area on the map
 function clampView(v) {
-  const s = base.s * v.k, cx = mapArea().cx - base.x, cy = innerHeight / 2 - base.y;
+  const { cx: mx, cy: my } = mapArea(), s = base.s * v.k, cx = mx - base.x, cy = my - base.y;
   v.x = clamp(v.x, cx - HALF_W * s, cx + HALF_W * s);
   v.y = clamp(v.y, cy - BOTTOM * s, cy - TOP * s);
   return v;
@@ -1561,6 +1567,7 @@ function fillSummary(s, url) {
 // an event's card: told by the reel (story), or opened by the reader, which ends any story
 async function openCard(e, story = false) {
   if (!story) endStory();
+  $("card").classList.toggle("compact", story);
   const when = e.end ? `${fmt(e.start)} – ${fmt(e.end)}` : fmt(e.start);
   fillCard({ meta: `${e.approx ? "c. " : ""}${when}`, title: e.title, kind: e.kind });
   state.selected = e;
@@ -1582,6 +1589,7 @@ async function openRealm(f) {
     .sort((a, b) => a.start - b.start);
   const under = (f.subject && f.subject !== f.name ? ` · under ${f.subject}` : "") + (f.rough ? " · borders approximate" : "");
   endStory();
+  $("card").classList.remove("compact");
   fillCard({ meta: `${fmt(from)} – ${fmt(until)}${under}`, title: f.name, related: inside });
   state.selected = null;
   state.selectedRealm = f;
@@ -1597,8 +1605,12 @@ function closeCard() {
   invalidate();
 }
 $("close").onclick = closeCard;
-// touching a story keeps it: it becomes the reader's card
-$("card").addEventListener("pointerdown", () => endStory());
+// touching a story keeps it: it becomes the reader's card, in full
+$("card").addEventListener("pointerdown", () => {
+  endStory();
+  $("card").classList.remove("compact");
+  invalidate();
+});
 addEventListener("keydown", (ev) => ev.key === "Escape" && closeCard());
 
 // --- boot --------------------------------------------------------------------------

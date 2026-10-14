@@ -14,9 +14,9 @@ const G = { gl: null, uniforms: {}, textures: [], cur: 0, painted: null, fade: n
 
 // --- geometry ------------------------------------------------------------------------
 
-function globeArea() { // centred above the dock (the card fits beside it)
-  const h = innerHeight - dockSpace();
-  return { cx: innerWidth / 2, cy: h / 2 + 8, r: Math.min(innerWidth, h) * 0.44 };
+function globeArea() { // centred across the screen (the card fits beside it), in the map's band
+  const { cy, h } = mapArea();
+  return { cx: innerWidth / 2, cy, r: Math.min(innerWidth, h) * 0.44 };
 }
 const globeRadius = () => globeArea().r * globe.k;
 

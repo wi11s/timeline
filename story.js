@@ -85,7 +85,7 @@ function drift(e) {
   const d = Math.acos(clamp(Math.sin(c.lat * rad) * Math.sin(e.lat * rad) +
     Math.cos(c.lat * rad) * Math.cos(e.lat * rad) * Math.cos(dlon * rad), -1, 1)) / rad; // degrees away
   const k = state.focus ? c.k + (state.focus.zoom - c.k) * 0.3 :
-    globe.on ? clamp(1.5 - d / 150, 1.05, 1.45) : clamp(2 - d / 110, 1.2, 1.9);
+    globe.on ? clamp(1.5 - d / 150, 1.05, innerWidth < 600 ? 1.15 : 1.45) : clamp(2 - d / 110, 1.2, innerWidth < 600 ? 1.5 : 1.9);
   if (globe.on) {
     const f = Math.min(1, Math.max(0, (d - 40) / d) + 0.25);
     return flyTo(c.lon + dlon * f, c.lat + (e.lat - c.lat) * f, k, 1400, 0.25);
