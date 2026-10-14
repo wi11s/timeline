@@ -156,7 +156,7 @@ which wikidata classes are pulled, and how many wikipedia editions an event need
 
 ## deploy
 
-it's a static site, so any static host works. on vercel, import the repo and accept the defaults (or run `npx vercel`). `vercel.json` sets cache headers, and `.vercelignore` leaves the pipeline out of the upload.
+it's a static site, so any static host works. on vercel, import the repo and accept the defaults (or run `npx vercel`). `vercel.json` sets cache headers, and `.vercelignore` leaves the pipeline out of the upload. page views are counted with [vercel web analytics](https://vercel.com/docs/analytics) (cookieless, no personal data), turned on under the project's analytics tab; running locally or on another host, the script just isn't there.
 
 ## license
 
