@@ -1,8 +1,9 @@
 """build data/borders/ from aourednik/historical-basemaps (GPL-3.0).
 
 usage: python3 pipeline/borders.py [path-to-historical-basemaps]
-clones the source into .cache/ if no path is given. editorial corrections to
-the source (see corrections.py) are applied at the end.
+clones the source into .cache/ if no path is given. unnamed territories are then
+named from cliopatria where it's clear who held them (cliopatria.py), and
+editorial corrections (corrections.py) are applied at the end.
 """
 import json
 import re
@@ -10,6 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import cliopatria
 import corrections
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -107,6 +109,7 @@ def build(src):
         years.append(year)
         print(f"{year:>8}  {len(feats):>4} polities")
     (OUT / "index.json").write_text(json.dumps(sorted(years)))
+    print(f"named {cliopatria.fill(OUT, verbose=False)} unnamed territories from cliopatria")
     corrections.apply(OUT)
 
 

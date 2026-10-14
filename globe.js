@@ -86,10 +86,7 @@ function paintTexture(feats) {
     c.stroke(feats.geoCoast);
   }
   c.globalAlpha = 1;
-  for (const f of feats) {
-    c.fillStyle = fillOf(f);
-    c.fill(f.geo);
-  }
+  paintTerritories(c, feats, ROUGH_DEG, "geo");
   if (physical.reliefGlobe) {
     c.save();
     c.globalCompositeOperation = "soft-light";
@@ -113,7 +110,7 @@ function paintTexture(feats) {
   }
   c.strokeStyle = colors.line;
   c.lineWidth = 1.4 / k;
-  for (const f of feats) c.stroke(f.geo);
+  for (const f of feats) if (!f.rough) c.stroke(f.geo);
 }
 
 function upload(slot) {
@@ -265,6 +262,7 @@ function globeHighlight() {
     if (!f || !state.shown?.includes(f)) continue;
     ctx.globalAlpha = a;
     ctx.lineWidth = w;
+    ctx.setLineDash(f.rough ? [5, 4] : []);
     ctx.beginPath();
     for (const ring of f.rings) {
       let pen = false;
@@ -277,6 +275,7 @@ function globeHighlight() {
     }
     ctx.stroke();
   }
+  ctx.setLineDash([]);
   ctx.globalAlpha = 1;
 }
 

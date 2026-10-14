@@ -55,8 +55,17 @@
   <canvas id="globe"></canvas>
   <canvas id="map"></canvas>
   <div id="notes"></div>
+  <div id="zoom" role="group" aria-label="zoom">
+    <button data-zoom="in" aria-label="zoom in" title="zoom in"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+    <button data-zoom="out" aria-label="zoom out" title="zoom out"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
+    <button data-zoom="fit" aria-label="show the whole world" title="show the whole world"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button>
+  </div>
   <div id="hover"></div>
   <nav id="top">
+    <button id="explore-toggle" aria-expanded="false" aria-controls="explore" title="explore a region or a story">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M10.6 5.4 9 9 5.4 10.6 7 7z"/></svg>
+      <span>explore</span>
+    </button>
     <button id="globe-toggle" aria-pressed="false" title="switch between the flat map and a globe (g)">
       <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><ellipse cx="8" cy="8" rx="2.8" ry="6.5"/><path d="M1.5 8h13"/></svg>
       <span>globe</span>
@@ -66,6 +75,15 @@
       contribute
     </a>
   </nav>
+  <section id="explore" hidden aria-label="explore">
+    <button class="close" aria-label="close">×</button>
+    <div class="key" aria-label="what the pins mean"></div>
+    <h2>Stories</h2>
+    <ul data-group="stories"></ul>
+    <h2>Regions</h2>
+    <ul data-group="regions"></ul>
+  </section>
+  <div id="focus-chip" hidden><span><small></small><b></b></span><button aria-label="leave this focus" title="leave this focus">×</button></div>
   <article id="card" hidden>
     <img alt="" hidden>
     <button id="close" aria-label="close">×</button>
@@ -86,9 +104,14 @@
         <svg viewBox="0 0 16 16" aria-hidden="true"><path class="i-play" d="M4.5 2.5v11l9-5.5z"/><path class="i-pause" d="M4 2.5h3v11H4zm5 0h3v11H9z"/></svg>
       </button>
       <button id="speed" aria-label="playback speed" title="playback speed">1×</button>
+      <button id="guided" aria-pressed="true" title="guided: fly in and pause at the biggest moments">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.6"/><path d="M8 0.5v3M8 12.5v3M0.5 8h3M12.5 8h3"/></svg>
+        <span>guided</span>
+      </button>
     </div>
     <output id="year"></output>
     <div id="track" role="slider" tabindex="0" aria-label="year">
+      <div id="band" hidden></div>
       <div id="ticks"></div>
       <div id="handle"></div>
     </div>
@@ -98,5 +121,6 @@
   <script defer src="/_vercel/insights/script.js"></script>
   <script src="app.js"></script>
   <script src="globe.js"></script>
+  <script src="story.js"></script>
 </body>
 </html>

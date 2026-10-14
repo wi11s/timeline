@@ -3,17 +3,20 @@
   --bg: #dae3df; --ink: #2b261e; --muted: #7c7466;
   --line: rgba(74, 58, 38, .3); --land: #ece2cc; --accent: #1f4e9c;
   --coast: rgba(36, 82, 128, .42); --river: rgba(36, 82, 128, .6); --halo: rgba(250, 245, 235, .65);
-  --panel: rgba(248, 243, 232, .95); --space: #ebe5d7;
+  --panel: rgba(248, 243, 232, .95); --space: #ebe5d7; --badge: #f8f3e8;
   --realm-0: #e7cc9f; --realm-1: #ddbcaa; --realm-2: #c9d3a9; --realm-3: #bfd0cc; --realm-4: #e5d79f;
   --realm-5: #d6c4d4; --realm-6: #cfbd9a; --realm-7: #e7c0a3; --realm-8: #bacbb0; --realm-9: #d9c8a6;
   --serif: "EB Garamond", "Iowan Old Style", Georgia, serif;
+  /* a colour for each kind of event (pins, notes, the key) */
+  --k-war: #9b2a2a; --k-battle: #c2531c; --k-political: #1f4e9c; --k-culture: #6d4a9e; --k-science: #16756f; --k-exploration: #2f7d3b; --k-disaster: #a77408; --k-art: #b02d6c;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #172025; --ink: #ece2cd; --muted: #928a7a;
     --line: rgba(236, 226, 205, .2); --land: #2e2a22; --accent: #86abe6;
     --coast: rgba(150, 186, 220, .3); --river: rgba(150, 186, 220, .5); --halo: rgba(27, 25, 21, .6);
-    --panel: rgba(31, 28, 23, .95); --space: #12110f;
+    --panel: rgba(31, 28, 23, .95); --space: #12110f; --badge: #172025;
+    --k-war: #e07a72; --k-battle: #f0995e; --k-political: #86abe6; --k-culture: #b9a0e6; --k-science: #6cc9bf; --k-exploration: #86c98f; --k-disaster: #e6bd5c; --k-art: #ee86b4;
     --realm-0: #5b4a30; --realm-1: #59413b; --realm-2: #46503a; --realm-3: #3b4d4c; --realm-4: #57522f;
     --realm-5: #4c4150; --realm-6: #4e4431; --realm-7: #5c4433; --realm-8: #3d4d3d; --realm-9: #4f4637;
   }
@@ -46,7 +49,22 @@ body::after {
 @media (prefers-color-scheme: dark) {
   body::after { opacity: .35; }
 }
-#notes, #hover, #top, #card, footer { z-index: 2; }
+#notes, #hover, #top, #zoom, #card, #explore, #focus-chip, footer { z-index: 2; }
+
+/* zoom: in, out, the whole world */
+#zoom {
+  position: fixed; top: max(14px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left));
+  display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 3px;
+  background: var(--panel); overflow: hidden;
+}
+#zoom button {
+  width: 36px; height: 34px; display: grid; place-items: center; padding: 0; border: 0;
+  background: none; color: var(--ink); cursor: pointer;
+}
+#zoom button + button { border-top: 1px solid var(--line); }
+#zoom button:hover { color: var(--accent); }
+#zoom button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#zoom svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
 /* the globe (globe.js) is drawn under the map canvas, which carries its labels and pins */
 #globe { display: none; }
@@ -55,7 +73,7 @@ body.globe { background: var(--space); }
 body.globe footer { background: linear-gradient(transparent, var(--space) 45%); }
 
 #hover {
-  position: fixed; top: 16px; left: 18px; pointer-events: none;
+  position: fixed; top: 20px; left: 66px; pointer-events: none;
   font-size: 16px; font-style: italic; color: var(--muted);
 }
 
@@ -72,7 +90,57 @@ body.globe footer { background: linear-gradient(transparent, var(--space) 45%); 
 #top > *:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #top > [hidden] { display: none; }
 #top svg { width: 15px; height: 15px; fill: currentColor; }
-#globe-toggle svg { fill: none; stroke: currentColor; stroke-width: 1.2; }
+#globe-toggle svg, #explore-toggle svg { fill: none; stroke: currentColor; stroke-width: 1.2; }
+#explore-toggle[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+
+/* explore: stories and regions to focus on */
+#explore {
+  position: fixed; top: 60px; right: 16px; width: min(380px, calc(100vw - 32px));
+  max-height: calc(100vh - 170px); max-height: calc(100dvh - 170px); overflow: auto; overscroll-behavior: contain;
+  padding: 10px 18px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+  box-shadow: 0 10px 30px rgba(60, 40, 15, .14);
+}
+#explore .key {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 30px 4px 0; padding-bottom: 10px;
+  border-bottom: 1px solid var(--line); color: var(--muted); font-size: 14px; font-style: italic;
+}
+#explore .key svg.kind { width: 15px; height: 15px; }
+#explore h2 { margin: 10px 0 2px; font-size: 13px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+#explore ul { margin: 0; padding: 0; list-style: none; }
+#explore li + li { border-top: 1px solid var(--line); }
+#explore li button {
+  display: block; width: 100%; padding: 9px 0; border: 0; background: none; text-align: left;
+  color: var(--ink); font: 15px/1.3 var(--serif); cursor: pointer;
+}
+#explore li b { font-size: 18px; font-weight: 500; }
+#explore li small { margin-left: 8px; color: var(--muted); font-style: italic; font-size: 13px; }
+#explore li span { display: block; margin-top: 2px; font-size: 14.5px; opacity: .8; }
+#explore li button:hover b { color: var(--accent); }
+#explore li button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#explore .close {
+  position: absolute; top: 6px; right: 8px; width: 28px; height: 28px; border: 0; border-radius: 50%;
+  background: none; color: var(--muted); font: 20px/1 var(--serif); cursor: pointer;
+}
+
+/* the focus being played, above the year */
+#focus-chip {
+  position: fixed; left: max(18px, env(safe-area-inset-left)); bottom: 74px;
+  display: flex; align-items: center; gap: 10px; padding: 6px 6px 7px 13px;
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 3px;
+}
+#focus-chip[hidden] { display: none; }
+#focus-chip small { display: block; color: var(--muted); font-size: 12.5px; font-style: italic; }
+#focus-chip b { font-size: 16px; font-weight: 500; }
+#focus-chip button { border: 0; background: none; color: var(--muted); font: 20px/1 var(--serif); cursor: pointer; padding: 2px 6px; }
+#focus-chip button:hover { color: var(--ink); }
+#band {
+  position: absolute; top: 50%; height: 7px; margin-top: -3.5px; border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+#guided svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.3; }
+#controls #guided { display: flex; gap: 6px; border-radius: 17px; }
+#guided[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 #globe-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 
 #card {
@@ -157,28 +225,54 @@ footer {
 
 /* notifications: a ping on the spot and a bubble near it (placed by placeNotes) */
 #notes { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
-.note { position: absolute; left: 0; top: 0; transition: opacity .4s; }
+.note { position: absolute; left: 0; top: 0; transition: opacity .25s; }
 .note.out { opacity: 0; }
 .note .ping {
   position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%;
-  border: 1.5px solid var(--accent); animation: ping 1.4s ease-out 3 both;
+  border: 1.5px solid var(--kind, var(--accent)); animation: ping 1.4s ease-out 3 both;
 }
 @keyframes ping { from { transform: scale(.4); opacity: 1; } to { transform: scale(2.6); opacity: 0; } }
 .note .bubble {
-  position: absolute; left: 0; top: 0; max-width: 250px; width: max-content;
-  padding: 6px 12px 8px; text-align: left; cursor: pointer; pointer-events: auto;
+  position: absolute; left: 0; top: 0; max-width: 290px; width: max-content;
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 8px 12px 9px; text-align: left; cursor: pointer; pointer-events: auto;
   background: var(--panel); color: var(--ink); border: 1px solid var(--line);
-  border-top: 2px solid var(--accent); border-radius: 3px;
+  border-top: 2px solid var(--kind, var(--accent)); border-radius: 3px;
   font: inherit; box-shadow: 0 3px 10px rgba(60, 40, 15, .12);
   animation: appear .3s ease-out both;
 }
 .note .leader {
-  position: absolute; left: 0; top: 0; height: 1px; background: var(--accent); opacity: .5;
+  position: absolute; left: 0; top: 0; height: 1px; background: var(--kind, var(--accent)); opacity: .5;
   transform-origin: 0 50%; pointer-events: none;
 }
 .note.paused .ping, .note.paused .bubble { animation-play-state: paused; }
 .note .bubble small { display: block; color: var(--muted); font-size: 13px; font-style: italic; }
+svg.kind {
+  width: 14px; height: 14px; margin: 0 5px -2px 0; fill: none; stroke: var(--accent);
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+svg.kind.k-war { stroke: var(--k-war); }
+svg.kind.k-battle { stroke: var(--k-battle); }
+svg.kind.k-political { stroke: var(--k-political); }
+svg.kind.k-culture { stroke: var(--k-culture); }
+svg.kind.k-science { stroke: var(--k-science); }
+svg.kind.k-exploration { stroke: var(--k-exploration); }
+svg.kind.k-disaster { stroke: var(--k-disaster); }
+svg.kind.k-art { stroke: var(--k-art); }
 .note .bubble b { display: block; font-size: 16px; font-weight: 500; line-height: 1.2; }
+.note .bubble .text { min-width: 0; }
+.note .bubble img { width: 46px; height: 46px; flex: none; object-fit: cover; border-radius: 2px; background: var(--line); filter: sepia(.15); }
+.note .bubble .line {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+  margin-top: 3px; font-size: 14px; line-height: 1.3; opacity: .8;
+}
+.note .bubble .line:empty { display: none; }
+/* the biggest moments: larger, with more to read */
+.note.feature .bubble { max-width: 360px; padding: 10px 14px 12px; gap: 12px; box-shadow: 0 8px 24px rgba(60, 40, 15, .18); }
+.note.feature .bubble b { font-size: 21px; line-height: 1.12; margin-top: 1px; }
+.note.feature .bubble img { width: 76px; height: 76px; }
+.note.feature .bubble .line { -webkit-line-clamp: 4; line-clamp: 4; font-size: 15px; }
+.note.feature .ping { border-width: 2px; }
 /* notes grow from their centre, so they never poke past where they'll settle */
 @keyframes appear { from { opacity: 0; scale: .96; } }
 @media (prefers-reduced-motion: reduce) {
@@ -195,9 +289,18 @@ footer {
   #controls #speed { min-width: 52px; border-radius: 20px; }
   #hover { display: none; } /* hover names don't exist on touch */
   #top > * { height: 32px; padding: 0 10px; font-size: 12px; }
+  #zoom button { width: 38px; height: 38px; }
   #card { top: auto; bottom: 150px; left: 12px; right: 12px; width: auto; max-height: 55vh; max-height: 55dvh; }
   #card img { max-height: 150px; }
   #card h2 { font-size: 21px; }
-  .note .bubble { max-width: min(230px, 70vw); }
+  .note .bubble { max-width: min(270px, 76vw); }
   .note .bubble b { font-size: 15px; }
+  .note .bubble img { width: 38px; height: 38px; }
+  .note.feature .bubble { max-width: min(300px, 78vw); }
+  .note.feature .bubble b { font-size: 18px; }
+  .note.feature .bubble img { width: 58px; height: 58px; }
+  #explore { top: auto; bottom: 120px; left: 12px; right: 12px; width: auto; max-height: 60vh; max-height: 60dvh; }
+  #focus-chip { bottom: 128px; }
+  #top #explore-toggle span, #top #globe-toggle span { display: none; }
+  #controls #guided span { display: none; }
 }

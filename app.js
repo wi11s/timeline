@@ -5,7 +5,9 @@ const PACE = 0.055;          // playback, in log-years per second at 1× (see th
 const SPEEDS = [0.5, 1, 2, 4];
 const LINGER = 0.16;         // how long a pin stays (fading) after its event ends, in log-years
 const NOTIFY_WEIGHT = 80;    // sitelinks an event needs to pop a notification
-const NOTE_MS = 4500;
+const NOTE_MS = 7000, FEATURE_MS = 9000; // how long a note stays (playback time)
+const FEATURE_WEIGHT = 150;  // sitelinks that make an event a guided stop (or importance 1)
+const BEAT_S = 4.5;          // a focus picks one note for about every this many seconds
 const TRANSITION_MS = 900, FEATHER = 6;
 const MAX_ZOOM = 60;
 const REALMS = 10;           // realm tints, --realm-0 … --realm-9 in style.css
@@ -41,6 +43,14 @@ const state = {
   playing: false,
   speed: 1,
   notes: [],
+  queue: [],            // events waiting for a free note
+  ghosts: [],           // notes fading out: they keep their space until gone
+  ease: 1,              // playback slows while there's something to read
+  guided: true,         // guided playback: fly to the biggest moments (story.js)
+  stop: null,           // the guided stop in progress
+  focus: null,          // the focus being played (story.js)
+  flight: null,         // a camera flight (story.js)
+  userAt: -1e9,         // when the user last moved the map
   selected: null,       // event shown in the card
   selectedRealm: null,  // or territory
   hoverRealm: null,
@@ -130,7 +140,7 @@ function prepare(geojson) {
         }
       });
     }
-    return { name: p.name, subject: p.subject, path, box, geo, geoBox, rings, label: best, realm: p.name ? hash(p.name) % REALMS : null };
+    return { name: p.name, subject: p.subject, wiki: p.wiki, rough: p.precision === 1, path, box, geo, geoBox, rings, label: best, realm: p.name ? hash(p.name) % REALMS : null };
   });
   feats.coast = new Path2D(); // every outline at once, for the water lines
   feats.geoCoast = new Path2D();
@@ -160,7 +170,9 @@ function mergeEvents(curated, wikidata) {
   }
   const events = [...curated, ...wikidata.filter((e) => !e.dup)];
   for (const e of events) {
-    e.weight = e.sitelinks ?? { 1: 150, 2: 70, 3: 30 }[e.importance];
+    // fewer languages write about the ancient world, so sitelinks count for more the older
+    // the event (the same scale as ERA in pipeline/wikidata.py)
+    e.weight = e.sitelinks ? e.sitelinks / (e.start < 500 ? 0.35 : e.start < 1500 ? 0.65 : 1) : { 1: 150, 2: 70, 3: 30 }[e.importance];
     e.endLg = lg(e.end ?? e.start);
   }
   return events.sort((a, b) => b.weight - a.weight);
@@ -201,6 +213,10 @@ function clampView(v) {
 function viewChanged() {
   state.transition = null; // transitions are rasterised in screen space
   lastMove = performance.now();
+  if (state.ghosts.length) { // fading notes can't follow the map
+    for (const el of document.querySelectorAll(".note.out")) el.remove();
+    state.ghosts = [];
+  }
   invalidate();
 }
 
@@ -421,9 +437,10 @@ const dark = matchMedia("(prefers-color-scheme: dark)");
 let colors = {};
 function readColors() {
   const css = getComputedStyle(document.documentElement);
-  for (const k of ["bg", "land", "line", "ink", "accent", "coast", "river", "halo"]) colors[k] = css.getPropertyValue(`--${k}`).trim();
+  for (const k of ["bg", "land", "line", "ink", "accent", "coast", "river", "halo", "badge"]) colors[k] = css.getPropertyValue(`--${k}`).trim();
   colors.realms = Array.from({ length: REALMS }, (_, i) => css.getPropertyValue(`--realm-${i}`).trim());
   colors.space = css.getPropertyValue("--space").trim();
+  colors.kinds = Object.fromEntries(Object.keys(KIND_ICONS).map((k) => [k, css.getPropertyValue(`--k-${k}`).trim()]));
   layerDirty = true;
   if (typeof globeStale === "function") globeStale(true);
   coastAt = null;
@@ -438,7 +455,9 @@ function tick(now) {
   const dt = Math.min(0.1, (now - last) / 1000 || 0);
   last = now;
   let busy = stepPlay(dt);
+  busy = stepFlight() || busy;
   busy = stepView(dt) || busy;
+  busy = pumpNotes() || busy;
   if (state.transition && progress(state.transition) >= 1) state.transition = null;
   busy ||= !!state.transition || (globe.on && globeBusy());
   draw();
@@ -447,7 +466,7 @@ function tick(now) {
 
 function visibleEvents() {
   const now = lg(state.year);
-  return state.events.filter((e) => e.start <= state.year && e.start >= MIN_YEAR && e.endLg - now <= LINGER);
+  return state.events.filter((e) => e.start <= state.year && e.start >= MIN_YEAR && e.endLg - now <= LINGER && inFocus(e));
 }
 
 const fillOf = (f) => (f.realm === null ? colors.land : colors.realms[f.realm]);
@@ -614,18 +633,74 @@ function paintCoast(c, feats, pad = 24) {
 
 function paintLand(c, feats, coast = true) {
   if (coast) paintCoast(c, feats);
-  for (const f of feats) {
-    if (!onScreen(f)) continue;
+  paintTerritories(c, feats.filter((f) => onScreen(f)), ROUGH_REACH);
+}
+
+// approximate territories (the source's precision 1: nearly every border before 1800)
+// meet in a soft wash of colour, as uncertain extents were shown on old maps, with no
+// border line. the softness is a fixed distance on the ground, so it widens as you
+// zoom in; coasts stay crisp. exact territories are drawn crisp on top. `reach` is
+// that distance in the paths' units, `key` which path to fill (flat, or geo for the globe)
+const ROUGH_DEG = 2, ROUGH_REACH = (ROUGH_DEG * Math.PI) / 180; // equal earth units are about radians
+const rough1 = document.createElement("canvas"), rough2 = document.createElement("canvas"), rough3 = document.createElement("canvas");
+const fitCanvas = (cv, w, h) => { if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; } };
+
+function paintTerritories(c, feats, reach, key = "path") {
+  const rough = feats.filter((f) => f.rough), exact = feats.filter((f) => !f.rough);
+  for (const f of rough) { // crisp underneath: shows through where the blur thins at the coast
     c.fillStyle = fillOf(f);
-    c.fill(f.path);
+    c.fill(f[key]);
   }
+  const m = c.getTransform(), blur = Math.min(80, reach * m.a);
+  if (rough.length && blur >= 1.5 && "filter" in c) softEdges(c, rough, blur, key, m);
+  for (const f of exact) {
+    c.fillStyle = fillOf(f);
+    c.fill(f[key]);
+  }
+}
+
+// blur at a quarter of the resolution (the blur hides it, and it's 16 times cheaper),
+// scale back up, and keep only what falls on the approximate territories' land
+function softEdges(c, rough, blur, key, m) {
+  const W = c.canvas.width, H = c.canvas.height, q = 0.25, w = Math.ceil(W * q), h = Math.ceil(H * q);
+  fitCanvas(rough1, w, h);
+  fitCanvas(rough2, w, h);
+  fitCanvas(rough3, W, H);
+  const a = rough1.getContext("2d"), b = rough2.getContext("2d"), full = rough3.getContext("2d");
+  a.setTransform(1, 0, 0, 1, 0, 0);
+  a.clearRect(0, 0, w, h);
+  a.setTransform(m.a * q, m.b * q, m.c * q, m.d * q, m.e * q, m.f * q);
+  for (const f of rough) {
+    a.fillStyle = fillOf(f);
+    a.fill(f[key]);
+  }
+  b.setTransform(1, 0, 0, 1, 0, 0);
+  b.clearRect(0, 0, w, h);
+  b.filter = `blur(${blur * q}px)`;
+  b.drawImage(rough1, 0, 0);
+  b.filter = "none";
+  full.setTransform(1, 0, 0, 1, 0, 0);
+  full.globalCompositeOperation = "copy";
+  full.drawImage(rough2, 0, 0, W, H);
+  // one fill of all of them: with destination-in, each separate fill would erase the rest
+  const all = new Path2D();
+  for (const f of rough) all.addPath(f[key]);
+  full.globalCompositeOperation = "destination-in";
+  full.setTransform(m);
+  full.fillStyle = "#000";
+  full.fill(all);
+  full.globalCompositeOperation = "source-over";
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.drawImage(rough3, 0, 0);
+  c.restore();
 }
 
 function strokeBorders(c, feats, alpha) {
   c.globalAlpha = alpha;
   c.lineWidth = 0.7 / (base.s * view.k);
   c.strokeStyle = colors.line;
-  for (const f of feats) if (onScreen(f)) c.stroke(f.path);
+  for (const f of feats) if (!f.rough && onScreen(f)) c.stroke(f.path); // approximate ones have no line to draw
   c.globalAlpha = 1;
 }
 
@@ -811,15 +886,32 @@ function drawFlatHighlight() {
     if (!f || !state.shown?.includes(f)) continue;
     ctx.globalAlpha = a;
     ctx.lineWidth = w / s;
+    ctx.setLineDash(f.rough ? [5 / s, 4 / s] : []); // an approximate border, outlined as one
     ctx.stroke(f.path);
   }
+  ctx.setLineDash([]);
   ctx.globalAlpha = 1;
 }
 
-// heaviest events first; lighter ones only where there's room
+// a glyph for each kind of event, as svg path data on a 16-unit grid, drawn as lines
+const KIND_ICONS = {
+  battle: "M3 3l10 10M13 3L3 13M2 10l4 4M10 14l4-4",
+  war: "M4 14V2M4 3h8l-2 3 2 3H4",
+  political: "M2.5 12.5h11M2.5 12.5 3 5l3 3.5L8 4l2 4.5L13 5l.5 7.5",
+  culture: "M2 13.5h12M3 6h10M8 2 2.5 6M8 2l5.5 4M4.5 6v7.5M8 6v7.5M11.5 6v7.5",
+  science: "M6 2h4M7 2v4.5L3 13.5h10L9 6.5V2",
+  exploration: "M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 1 0 0-13M10.5 5.5 9 9l-3.5 1.5L7 7z",
+  disaster: "M9 1.5 4 9h4l-1 5.5L12 7H8z",
+  art: "M2.5 3h11v10h-11zM4.5 11l3-4 2 2.5 1.5-1.5 2 3",
+};
+const kindPaths = Object.fromEntries(Object.entries(KIND_ICONS).map(([k, d]) => [k, new Path2D(d)]));
+const kindSvg = (kind) => `<svg class="kind k-${kind}" viewBox="0 0 16 16" aria-hidden="true"><path d="${KIND_ICONS[kind] ?? ""}"/></svg>`;
+
+// heaviest events first; lighter ones only where there's room. each is a small
+// badge with its kind's glyph; the smallest are plain dots until you zoom in
 function drawPins() {
-  const gap = 11, cap = Math.round(45 * Math.sqrt(globe.on ? globe.k : view.k));
-  const size = clamp(Math.sqrt(pixelsPerUnit() / 300), 0.55, 1); // smaller pins on a small map
+  const size = clamp(Math.sqrt(pixelsPerUnit() / 300), 0.75, 1.1); // smaller pins on a small map
+  const gap = 19 * size, cap = Math.round(45 * Math.sqrt(globe.on ? globe.k : view.k));
   const noted = new Set([state.selected, ...state.notes.map((n) => n.e)].filter(Boolean));
   const candidates = [...noted, ...visibleEvents().filter((e) => !noted.has(e))];
   state.pins = [];
@@ -831,18 +923,30 @@ function drawPins() {
     if (x < -10 || y < -10 || x > innerWidth + 10 || y > innerHeight + 10) continue;
     if (!noted.has(e) && state.pins.some((p) => Math.abs(p.x - x) < gap && Math.abs(p.y - y) < gap)) continue;
     const age = (e.endLg - lg(state.year)) / LINGER;
-    const r = (e === state.hoverEvent ? 2 : 0) + size * (e.importance === 1 ? 5.5 : e.importance === 2 ? 4.5 : 3.5);
+    const r = (e === state.hoverEvent ? 2 : 0) + size * (e.importance === 1 ? 11 : e.importance === 2 ? 10 : 9);
     state.pins.push({ e, x, y, r, alpha: age > 0 ? 1 - age * 0.65 : 1 });
   }
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = colors.bg;
-  ctx.fillStyle = colors.accent;
+  ctx.lineCap = ctx.lineJoin = "round";
   for (const p of [...state.pins].reverse()) { // heaviest on top
     ctx.globalAlpha = p.alpha;
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fillStyle = colors.kinds?.[p.e.kind] ?? colors.accent;
     ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = colors.bg;
     ctx.stroke();
+    const icon = kindPaths[p.e.kind];
+    if (icon && p.r >= 5) {
+      const k = (p.r * 1.3) / 16;
+      ctx.save();
+      ctx.translate(p.x - 8 * k, p.y - 8 * k);
+      ctx.scale(k, k);
+      ctx.lineWidth = 1.9;
+      ctx.strokeStyle = colors.badge;
+      ctx.stroke(icon);
+      ctx.restore();
+    }
   }
   ctx.globalAlpha = 1;
   const sel = state.pins.find((p) => p.e === state.selected);
@@ -888,31 +992,89 @@ function draw() {
 // --- notifications -------------------------------------------------------------------
 // big events pop a note on the map as the timeline moves forward past them
 
+// the biggest moments: the hand-picked world-changing events, and anything nearly
+// every wikipedia covers (bar the "x founded" entries, which are too routine)
+const featured = (e) => (e.curated ? e.importance === 1 : e.weight >= FEATURE_WEIGHT && !e.title.endsWith(" founded"));
+const inFocus = (e) => {
+  const f = state.focus;
+  if (!f) return true;
+  if (f.kinds && !f.kinds.includes(e.kind)) return false;
+  const b = f.box;
+  return !b || (e.lon >= b[0] && e.lon <= b[2] && e.lat >= b[1] && e.lat <= b[3]);
+};
+
+// events crossed by the timeline queue up for a note. they never push each other
+// off: a note appears when there's a free slot, and an event that's waited too long
+// is dropped. the wikipedia summary is fetched while it waits
 function notify(prev, year) {
   for (const n of state.notes) if (n.e.start > year) dismiss(n, true);
-  if (year <= prev || lg(prev) - lg(year) > 0.4) return; // backwards, or a jump
-  const crossed = state.events.filter((e) => e.weight >= NOTIFY_WEIGHT && e.start > prev && e.start <= year);
-  for (const e of crossed.slice(0, 2)) addNote(e); // already heaviest first
+  if (year <= prev || lg(prev) - lg(year) > 0.4) { state.queue = []; return; } // backwards, or a jump
+  // a focus has picked its notes in advance (story.js); otherwise the big events get one
+  const picked = state.focus?.picks;
+  const crossed = state.events.filter((e) => e.start > prev && e.start <= year &&
+    (picked ? picked.has(e) : e.weight >= NOTIFY_WEIGHT));
+  for (const e of crossed.slice(0, 3)) enqueue(e); // already heaviest first
+  const big = crossed.find((e) => (state.focus ? state.focus.stops.has(e) : featured(e)));
+  if (big) guide(big);
 }
 
-function addNote(e) {
+function enqueue(e) {
+  if (state.notes.some((n) => n.e === e) || state.queue.some((q) => q.e === e)) return;
+  const q = { e, since: performance.now(), summary: e.wiki ? undefined : null };
+  if (e.wiki) summary(e.wiki).then((s) => { q.summary = s ?? null; invalidate(); });
+  state.queue.push(q);
+  state.queue.sort((a, b) => featured(b.e) - featured(a.e) || b.e.weight - a.e.weight);
+  state.queue.length = Math.min(state.queue.length, 8);
+}
+
+// every frame: show queued notes while there's room
+function pumpNotes() {
+  // an event can wait about as long as 1.5 seconds of playback, whatever the speed
+  const now = lg(state.year), t = performance.now();
+  const wait = Math.max(0.004, 1.5 * (state.focus ? state.focus.rate : PACE) * state.speed);
+  state.queue = state.queue.filter((q) => q.e.start <= state.year && lg(q.e.start) - now < wait);
+  const room = (innerWidth < 600 ? 2 : 3) - state.notes.length;
+  for (let i = 0; i < room; i++) {
+    const k = state.queue.findIndex((q) => q.summary !== undefined || t - q.since > 1500);
+    if (k < 0) break;
+    const [q] = state.queue.splice(k, 1);
+    addNote(q.e, q.summary);
+  }
+  state.ghosts = state.ghosts.filter((g) => g.until > t);
+  return state.ghosts.length > 0;
+}
+
+const firstSentence = (text, max) => {
+  const first = text.match(/^.{20,}?[.!?](?=\s+[A-Z]|$)/)?.[0] ?? text;
+  return first.length > max ? `${first.slice(0, max - 1).replace(/\s+\S*$/, "")}…` : first;
+};
+
+function addNote(e, s) {
   if (state.notes.some((n) => n.e === e)) return;
-  const el = document.createElement("div");
-  el.className = "note";
-  el.innerHTML = `<span class="leader" hidden></span><span class="ping"></span><button class="bubble"><small></small><b></b></button>`;
-  el.querySelector("small").textContent = `${e.approx ? "c. " : ""}${fmt(e.start)} · ${e.kind}`;
+  const feature = featured(e), el = document.createElement("div");
+  el.className = feature ? "note feature" : "note";
+  el.style.setProperty("--kind", `var(--k-${e.kind}, var(--accent))`);
+  el.innerHTML = `<span class="leader" hidden></span><span class="ping"></span><button class="bubble"><img alt="" hidden><span class="text"><small></small><b></b><span class="line"></span></span></button>`;
+  el.querySelector("small").innerHTML = kindSvg(e.kind);
+  el.querySelector("small").append(`${e.approx ? "c. " : ""}${fmt(e.start)} · ${e.kind}`);
   el.querySelector("b").textContent = e.title;
+  if (s?.type === "standard") el.querySelector(".line").textContent = firstSentence(s.extract, feature ? 230 : 130);
+  const img = el.querySelector("img");
+  if (s?.thumbnail) { // the image box has a fixed size, so loading it doesn't move anything
+    img.src = s.thumbnail.source;
+    img.hidden = false;
+    img.onerror = () => { img.remove(); note.w = bubble.offsetWidth; note.h = bubble.offsetHeight; invalidate(); };
+  }
   el.querySelector("button").onclick = () => openCard(e);
   $("notes").append(el);
   const bubble = el.querySelector("button");
   // notes that pop up during playback live on playback time: pausing freezes them
   const note = {
     e, el, bubble, leader: el.querySelector(".leader"), w: bubble.offsetWidth, h: bubble.offsetHeight,
-    spot: 0, fromPlay: state.playing, left: NOTE_MS,
+    spot: 0, fromPlay: state.playing, left: feature ? FEATURE_MS : NOTE_MS, born: performance.now(),
   };
   runNote(note);
   state.notes.push(note);
-  if (state.notes.length > (innerWidth < 600 ? 2 : 3)) dismiss(state.notes[0], true);
   placeNotes();
   invalidate();
 }
@@ -931,10 +1093,12 @@ function freezeNote(note) {
 function dismiss(note, now = false) {
   clearTimeout(note.timer);
   state.notes = state.notes.filter((n) => n !== note);
-  if (now) note.el.remove();
+  // a fading note can't follow the map, so it goes at once while the camera moves
+  if (now || state.flight || goal || fling || drag?.moved || pinch) note.el.remove();
   else {
+    if (!note.el.hidden && !note.bubble.hidden) state.ghosts.push({ box: rectOf(note.bubble), until: performance.now() + 300 });
     note.el.classList.add("out");
-    setTimeout(() => note.el.remove(), 400);
+    setTimeout(() => note.el.remove(), 250);
   }
   invalidate();
 }
@@ -974,6 +1138,8 @@ function placeNotes() {
   const W = innerWidth, H = innerHeight, pad = 8, gap = 8; // gap: between bubbles, stacked or not
   const blocked = [rectOf($("top")), rectOf(document.querySelector("footer"))];
   if (!$("card").hidden) blocked.push(rectOf($("card")));
+  for (const g of state.ghosts) blocked.push(g.box);
+  if (!$("explore").hidden) blocked.push(rectOf($("explore")));
   const at = state.notes.map((n) => screenAt(n.e.lon, n.e.lat) ?? [-1e4, -1e4]); // behind the globe: off screen
   const pings = at.map(([x, y]) => [x - 11, y - 11, x + 11, y + 11]);
   const stacks = [];
@@ -1074,7 +1240,8 @@ function setYear(y) {
 }
 
 function setPlaying(on) {
-  if (on && state.pos >= 1) setYear(MIN_YEAR); // replay from the start
+  if (on && state.focus && state.year >= state.focus.to) setYear(state.focus.from); // replay the focus
+  else if (on && state.pos >= 1) setYear(MIN_YEAR); // replay from the start
   if (on !== state.playing) {
     for (const n of state.notes) if (n.fromPlay) on ? runNote(n) : freezeNote(n);
   }
@@ -1084,10 +1251,16 @@ function setPlaying(on) {
   invalidate();
 }
 
+// playback slows while a fresh note is being read, and nearly stops at a guided stop
 function stepPlay(dt) {
   if (!state.playing) return false;
-  setPos(toPos(lgShift(toYear(state.pos), dt * PACE * state.speed)));
-  if (state.pos >= 1) setPlaying(false);
+  const t = performance.now(), fresh = state.notes.some((n) => n.fromPlay && t - n.born < 3000);
+  const target = state.stop ? 0.04 : fresh ? 0.35 : 1;
+  state.ease += (target - state.ease) * (1 - Math.exp(-dt * (target < state.ease ? 6 : 1.5)));
+  const rate = state.focus ? state.focus.rate : PACE;
+  setPos(toPos(lgShift(toYear(state.pos), dt * rate * state.speed * state.ease)));
+  stepStop(dt);
+  if (state.pos >= 1 || (state.focus && state.year >= state.focus.to)) setPlaying(false);
   return state.playing;
 }
 
@@ -1136,7 +1309,7 @@ addEventListener("keydown", (ev) => {
 // --- map interaction -------------------------------------------------------------
 
 function eventAt(x, y, touch = false) {
-  let best = null, bestD = touch ? 22 : 10;
+  let best = null, bestD = touch ? 18 : 6;
   for (const p of state.pins) {
     const d = Math.hypot(p.x - x, p.y - y) - p.r;
     if (d < bestD) { best = p.e; bestD = d; }
@@ -1175,6 +1348,7 @@ function pinchInfo() {
 
 canvas.addEventListener("pointerdown", (ev) => {
   canvas.setPointerCapture(ev.pointerId);
+  userSteers();
   pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
   goal = fling = null;
   if (pointers.size === 2) { drag = null; pinch = pinchInfo(); }
@@ -1247,6 +1421,7 @@ canvas.addEventListener("pointercancel", endPointer);
 let trackpad = false;
 canvas.addEventListener("wheel", (ev) => {
   ev.preventDefault();
+  userSteers();
   const unit = ev.deltaMode === 1 ? 16 : 1, dx = ev.deltaX * unit, dy = ev.deltaY * unit;
   if (ev.ctrlKey) return zoomAt(ev.clientX, ev.clientY, Math.exp(-dy * 0.01), false);
   if (dx !== 0 && !ev.shiftKey && ev.deltaMode === 0) trackpad = true;
@@ -1255,6 +1430,18 @@ canvas.addEventListener("wheel", (ev) => {
     panBy(-dx, -dy);
   } else zoomAt(ev.clientX, ev.clientY, Math.exp(-dy * 0.002));
 }, { passive: false });
+
+// the zoom buttons zoom about the middle of the map
+for (const b of document.querySelectorAll("#zoom button")) {
+  b.onclick = () => {
+    userSteers();
+    const { cx, cy } = globeArea(), z = b.dataset.zoom;
+    if (z === "fit") {
+      if (globe.on) { globe.goalK = 1; viewChanged(); }
+      else zoomAt(cx, cy, minZoom / (goal ?? view).k);
+    } else zoomAt(cx, cy, z === "in" ? 1.8 : 1 / 1.8);
+  };
+}
 
 canvas.addEventListener("dblclick", (ev) => zoomAt(ev.clientX, ev.clientY, ev.shiftKey ? 0.4 : 2.5));
 
@@ -1354,8 +1541,11 @@ function fillSummary(s, url) {
   const card = $("card"), img = card.querySelector("img"), desc = card.querySelector(".desc"), a = card.querySelector(".wiki");
   desc.classList.remove("loading");
   desc.textContent = s?.type === "standard" ? s.extract : "";
-  a.href = url ?? s?.content_urls?.desktop?.page ?? "";
-  a.hidden = !a.href;
+  // check the string, not a.href: an empty href reads back as this page's own url
+  const link = url ?? s?.content_urls?.desktop?.page;
+  if (link) a.href = link;
+  else a.removeAttribute("href");
+  a.hidden = !link;
   if (s?.thumbnail) {
     const big = (s.originalimage?.width ?? 0) >= 500 ? s.thumbnail.source.replace(/\/\d+px-/, "/500px-") : null;
     img.onerror = () => { if (big && img.src !== s.thumbnail.source) img.src = s.thumbnail.source; else img.hidden = true; };
@@ -1384,11 +1574,12 @@ async function openRealm(f) {
     .filter((e) => { const [x, y] = project(e.lon, e.lat); return wctx.isPointInPath(f.path, x, y); })
     .slice(0, 6) // heaviest first already
     .sort((a, b) => a.start - b.start);
-  const under = f.subject && f.subject !== f.name ? ` · under ${f.subject}` : "";
+  const under = (f.subject && f.subject !== f.name ? ` · under ${f.subject}` : "") + (f.rough ? " · borders approximate" : "");
   fillCard({ meta: `${fmt(from)} – ${fmt(until)}${under}`, title: f.name, related: inside });
   state.selected = null;
   state.selectedRealm = f;
-  const s = await realmArticle(f.name, from);
+  // a name that came from cliopatria brings its wikipedia article with it
+  const s = f.wiki ? await summaryOf(f.wiki) : await realmArticle(f.name, from);
   if (state.selectedRealm === f) fillSummary(s);
 }
 
