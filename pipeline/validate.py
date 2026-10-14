@@ -1,11 +1,11 @@
-"""validate data/events.json against the schema in data/README.md."""
+"""validate data/events.json and data/events-wikidata.json against the schema in README.md."""
 import json
 import sys
 from pathlib import Path
 
 KINDS = {"war", "battle", "political", "culture", "science", "exploration", "disaster"}
 REQUIRED = {"id": str, "title": str, "kind": str, "start": int, "lat": (int, float), "lon": (int, float), "importance": int}
-OPTIONAL = {"end": int, "approx": bool, "wiki": str}
+OPTIONAL = {"end": int, "approx": bool, "wiki": str, "qid": str, "sitelinks": int}
 
 
 def errors(events):
@@ -36,7 +36,9 @@ def errors(events):
 
 
 if __name__ == "__main__":
-    path = Path(__file__).resolve().parent.parent / "data" / "events.json"
-    errs = list(errors(json.loads(path.read_text())))
+    data = Path(__file__).resolve().parent.parent / "data"
+    errs = []
+    for name in ("events.json", "events-wikidata.json"):
+        errs += [f"{name}: {e}" for e in errors(json.loads((data / name).read_text()))]
     print("\n".join(errs) or "ok")
     sys.exit(bool(errs))

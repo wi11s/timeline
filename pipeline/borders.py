@@ -14,6 +14,7 @@ OUT = ROOT / "data" / "borders"
 SRC_URL = "https://github.com/aourednik/historical-basemaps.git"
 TOLERANCE = 0.05  # degrees (~5km), douglas-peucker
 DECIMALS = 2
+SOUTH = -60  # polygons entirely south of this (antarctica and its islands) are dropped
 
 
 def source_dir():
@@ -68,7 +69,7 @@ def polygons(geom):
     out = []
     for poly in polys:
         outer = ring(poly[0])
-        if outer:  # drop the polygon if its outer ring collapses
+        if outer and max(lat for _, lat in outer) >= SOUTH:  # drop collapsed rings and antarctica
             out.append([outer] + [r for r in map(ring, poly[1:]) if r])
     return out
 

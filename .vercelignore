@@ -1,0 +1,5 @@
+# the pipeline runs offline; only the viewer and its data get deployed
+.cache/
+pipeline/
+__pycache__/
+README.md
