@@ -1,6 +1,6 @@
 // world timeline: equal earth map + log-scale timeline. no dependencies.
 
-const MIN_YEAR = -3000, MAX_YEAR = 2025, PRESENT = 2050;
+const MIN_YEAR = -3000, MAX_YEAR = 2026, PRESENT = 2050;
 const PACE = 0.055;          // playback, in log-years per second at 1× (see the time scale)
 const SPEEDS = [0.5, 1, 2, 4];
 const LINGER = 0.16;         // how long a pin stays (fading) after its event ends, in log-years

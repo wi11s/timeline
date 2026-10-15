@@ -26,7 +26,7 @@ OUT = ROOT / "data" / "events-wikidata.json"
 CACHE = ROOT / ".cache" / "wikidata"
 ENDPOINT = "https://query.wikidata.org/sparql"
 AGENT = "world-timeline/0.2 (https://github.com/wi11s/timeline)"
-MIN_YEAR, MAX_YEAR = -123000, 2025
+MIN_YEAR, MAX_YEAR = -123000, 2026
 
 # where an event happened, most specific first. each is a path to a place with coordinates
 PLACES = ("wdt:P625", "wdt:P276/wdt:P625", "wdt:P36/wdt:P625", "wdt:P17/wdt:P625")
