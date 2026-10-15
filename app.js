@@ -907,18 +907,19 @@ function drawFlatHighlight() {
 }
 
 // a glyph for each kind of event, as svg path data on a 16-unit grid, drawn as lines
+// the kinds' glyphs: lucide icons (isc licence), written by pipeline/icons.py
 const KIND_ICONS = {
-  battle: "M3 3l10 10M13 3L3 13M2 10l4 4M10 14l4-4",
-  war: "M4 14V2M4 3h8l-2 3 2 3H4",
-  political: "M2.5 12.5h11M2.5 12.5 3 5l3 3.5L8 4l2 4.5L13 5l.5 7.5",
-  culture: "M2 13.5h12M3 6h10M8 2 2.5 6M8 2l5.5 4M4.5 6v7.5M8 6v7.5M11.5 6v7.5",
-  science: "M6 2h4M7 2v4.5L3 13.5h10L9 6.5V2",
-  exploration: "M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 1 0 0-13M10.5 5.5 9 9l-3.5 1.5L7 7z",
-  disaster: "M9 1.5 4 9h4l-1 5.5L12 7H8z",
-  art: "M2.5 3h11v10h-11zM4.5 11l3-4 2 2.5 1.5-1.5 2 3",
+  battle: "M14.5 17.5L3 6L3 3L6 3L17.5 14.5M13 19L19 13M16 16L20 20M19 21L21 19M14.5 6.5L18 3L21 3L21 6L17.5 9.5M5 14L9 18M7 17L4 20M3 19L5 21", // swords
+  war: "M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22L4 15", // flag
+  political: "M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294zM5 21h14", // crown
+  culture: "M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z", // book-open
+  science: "M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2M8.5 2h7M7 16h10", // flask-conical
+  exploration: "M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1 .6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1M19.38 20A11.6 11.6 0 0 0 21 14l-9-4-9 4c0 2.9.94 5.34 2.81 7.76M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6M12 10v4M12 2v3", // ship
+  disaster: "M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z", // flame
+  art: "M13 6.5a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0M17 10.5a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0M8 7.5a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0M6 12.5a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z", // palette
 };
 const kindPaths = Object.fromEntries(Object.entries(KIND_ICONS).map(([k, d]) => [k, new Path2D(d)]));
-const kindSvg = (kind) => `<svg class="kind k-${kind}" viewBox="0 0 16 16" aria-hidden="true"><path d="${KIND_ICONS[kind] ?? ""}"/></svg>`;
+const kindSvg = (kind) => `<svg class="kind k-${kind}" viewBox="0 0 24 24" aria-hidden="true"><path d="${KIND_ICONS[kind] ?? ""}"/></svg>`;
 
 // heaviest events first; lighter ones only where there's room. each is a small
 // badge with its kind's glyph; the smallest are plain dots until you zoom in
@@ -951,11 +952,11 @@ function drawPins() {
     ctx.stroke();
     const icon = kindPaths[p.e.kind];
     if (icon && p.r >= 5) {
-      const k = (p.r * 1.3) / 16;
+      const k = (p.r * 1.25) / 24; // lucide's 24-unit grid
       ctx.save();
-      ctx.translate(p.x - 8 * k, p.y - 8 * k);
+      ctx.translate(p.x - 12 * k, p.y - 12 * k);
       ctx.scale(k, k);
-      ctx.lineWidth = 1.9;
+      ctx.lineWidth = 2.6;
       ctx.strokeStyle = colors.badge;
       ctx.stroke(icon);
       ctx.restore();

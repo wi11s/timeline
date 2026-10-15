@@ -55,23 +55,23 @@
   <canvas id="globe"></canvas>
   <canvas id="map"></canvas>
   <div id="zoom" class="bar" role="group" aria-label="zoom">
-    <button data-zoom="in" aria-label="zoom in" title="zoom in"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
-    <button data-zoom="out" aria-label="zoom out" title="zoom out"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
-    <button data-zoom="fit" aria-label="show the whole world" title="show the whole world"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button>
+    <button data-zoom="in" aria-label="zoom in" title="zoom in"><svg data-icon="plus" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg></button>
+    <button data-zoom="out" aria-label="zoom out" title="zoom out"><svg data-icon="minus" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+    <button data-zoom="fit" aria-label="show the whole world" title="show the whole world"><svg data-icon="maximize" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
   </div>
   <div id="hover"></div>
   <nav id="top">
     <label id="search" title="search events (/)">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.8"/><path d="m10.4 10.4 4 4"/></svg>
+      <svg data-icon="search" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11a8 8 0 1 0 16 0a8 8 0 1 0 -16 0M21 21l-4.3-4.3"/></svg>
       <input type="search" placeholder="Search events" aria-label="search events" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list" autocomplete="off" spellcheck="false" enterkeyhint="go">
     </label>
     <div class="bar">
     <button id="explore-toggle" aria-expanded="false" aria-controls="explore" title="explore a region or a story">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M10.6 5.4 9 9 5.4 10.6 7 7z"/></svg>
+      <svg data-icon="compass" viewBox="0 0 24 24" aria-hidden="true"><path d="M16.24 7.76l-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265zM2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0"/></svg>
       <span>Explore</span>
     </button>
     <button id="globe-toggle" aria-pressed="false" title="show the flat map instead of the globe (g)">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 3.6 5.5 2l5 1.6 4-1.6v10.4l-4 1.6-5-1.6-4 1.6zM5.5 2v10.4M10.5 3.6V14"/></svg>
+      <svg data-icon="map" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0zM15 5.764v15M9 3.236v15"/></svg>
       <span>Flat map</span>
     </button>
     <a id="contribute" href="https://github.com/wi11s/timeline" target="_blank" rel="noopener">
@@ -82,17 +82,17 @@
   </nav>
   <ul id="results" role="listbox" aria-label="matching events" hidden></ul>
   <section id="explore" hidden aria-label="explore">
-    <button class="close" aria-label="close">×</button>
+    <button class="close" aria-label="close"><svg data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     <div class="key" aria-label="what the pins mean"></div>
     <h2>Stories</h2>
     <ul data-group="stories"></ul>
     <h2>Regions</h2>
     <ul data-group="regions"></ul>
   </section>
-  <div id="focus-chip" hidden><span><small></small><b></b></span><button aria-label="leave this focus" title="leave this focus">×</button></div>
+  <div id="focus-chip" hidden><span><small></small><b></b></span><button aria-label="leave this focus" title="leave this focus"><svg data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
   <article id="card" hidden>
     <img alt="" hidden>
-    <button id="close" aria-label="close">×</button>
+    <button id="close" aria-label="close"><svg data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     <div class="body">
       <p class="meta"></p>
       <h2></h2>
@@ -106,7 +106,7 @@
   </article>
   <footer>
     <button id="play" aria-label="play" aria-pressed="false" title="play (space)">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path class="i-play" d="M5 2.8v10.4q0 .9.8.4l8-4.8q.7-.4 0-.8l-8-4.8Q5 1.9 5 2.8z"/><path class="i-pause" d="M4 3h2.6v10H4zm5.4 0H12v10H9.4z"/></svg>
+      <svg data-icon="play" class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3L20 12L6 21L6 3z"/></svg><svg data-icon="pause" class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h2a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1v-14a1 1 0 0 1 1 -1zM7 4h2a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1v-14a1 1 0 0 1 1 -1z"/></svg>
     </button>
     <output id="year"></output>
     <div id="track" role="slider" tabindex="0" aria-label="year">

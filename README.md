@@ -93,6 +93,7 @@ pipeline/cliopatria.py        names unnamed territories and adds missing land, f
 pipeline/corrections.py       fixes to the border source, applied by borders.py
 pipeline/physical.py          builds data/physical/
 pipeline/validate.py          checks both event files
+pipeline/icons.py             fetches the lucide icons (event kinds and buttons) into app.js and index.html
 vercel.json .vercelignore     static hosting config
 robots.txt sitemap.xml        for search engines, along with the meta tags in index.html
 og-image.jpg favicon.svg      the link-preview image and icons. regenerate og-image.jpg
@@ -176,4 +177,4 @@ it's a static site, so any static host works. on vercel, import the repo and acc
 
 ## license
 
-[GPL-3.0](LICENSE), because the border data from [aourednik/historical-basemaps](https://github.com/aourednik/historical-basemaps) is GPL-3.0. territory names and some shapes come from [cliopatria](https://github.com/Seshat-Global-History-Databank/cliopatria) by the seshat global history databank ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); simplified, and used only to fill gaps as described under borders). by contributing you agree your contribution is released under the same license. event data from [wikidata](https://www.wikidata.org) is CC0, and relief, rivers, lakes and region names come from [natural earth](https://www.naturalearthdata.com) (public domain); descriptions and photos are loaded live from wikipedia and wikimedia commons under their own licenses.
+[GPL-3.0](LICENSE), because the border data from [aourednik/historical-basemaps](https://github.com/aourednik/historical-basemaps) is GPL-3.0. territory names and some shapes come from [cliopatria](https://github.com/Seshat-Global-History-Databank/cliopatria) by the seshat global history databank ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); simplified, and used only to fill gaps as described under borders). by contributing you agree your contribution is released under the same license. event data from [wikidata](https://www.wikidata.org) is CC0, and relief, rivers, lakes and region names come from [natural earth](https://www.naturalearthdata.com) (public domain); descriptions and photos are loaded live from wikipedia and wikimedia commons under their own licenses. icons are from [lucide](https://lucide.dev) ([ISC](https://lucide.dev/license)); to change one, edit the name in `pipeline/icons.py` (event kinds) or a button's `data-icon` in `index.html`, then run `python3 pipeline/icons.py`.
