@@ -158,6 +158,15 @@ async function loadBorders(year) {
 
 const snapshotFor = (y) => state.snapshots.filter((s) => s <= y).at(-1) ?? state.snapshots[0];
 
+// [west, south, east, north], until when, share of the sitelinks an event there needs
+const REGIONS = [
+  [[-170, -56, -30, 72], 1500, 0.5], // the americas before columbus
+  [[-20, -36, 42, 21], 1880, 0.5],   // sub-saharan africa, before the scramble
+  [[42, -36, 52, 11.5], 1880, 0.5],  // the horn, without yemen
+];
+const regionShare = (e) => REGIONS.find(([[w, s, east, n], until]) =>
+  e.lon >= w && e.lon <= east && e.lat >= s && e.lat <= n && e.start < until)?.[2] ?? 1;
+
 // curated events win over their wikidata twins, but borrow their sitelinks as weight
 const article = (url) => url && decodeURIComponent(url).toLowerCase();
 function mergeEvents(curated, wikidata) {
@@ -170,8 +179,9 @@ function mergeEvents(curated, wikidata) {
   const events = [...curated, ...wikidata.filter((e) => !e.dup)];
   for (const e of events) {
     // fewer languages write about the ancient world, so sitelinks count for more the older
-    // the event (the same scale as ERA in pipeline/wikidata.py)
-    e.weight = e.sitelinks ? e.sitelinks / (e.start < 500 ? 0.35 : e.start < 1500 ? 0.65 : 1) : { 1: 150, 2: 70, 3: 30 }[e.importance];
+    // the event (the same scale as ERA in pipeline/wikidata.py), and in the parts of the
+    // world wikipedia covers thinly (REGIONS there)
+    e.weight = e.sitelinks ? e.sitelinks / (e.start < 500 ? 0.35 : e.start < 1500 ? 0.65 : 1) / regionShare(e) : { 1: 150, 2: 70, 3: 30 }[e.importance];
     e.endLg = lg(e.end ?? e.start);
   }
   return events.sort((a, b) => b.weight - a.weight);

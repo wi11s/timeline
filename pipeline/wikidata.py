@@ -9,7 +9,9 @@ sitelinks (how many language editions cover the event) is the ranking signal:
 it sets `importance` and decides which pins win when the map is crowded.
 
 fewer languages write about the ancient world, so older events need fewer
-sitelinks to make the cut (ERA). works of art are placed where they were made
+sitelinks to make the cut (ERA), and the same goes for places wikipedia's
+editors mostly don't write from: the americas before columbus and sub-saharan
+africa before the scramble (REGIONS). works of art are placed where they were made
 or found, never where they're kept now: a museum isn't where art history happened.
 """
 import json
@@ -37,10 +39,23 @@ IN_SITU = ("wdt:P1071/wdt:P625", "wdt:P189/wdt:P625", "wdt:P625", "wdt:P276/wdt:
 # worked, if that was only one place (ARTIST, below); otherwise the painting is left out
 PAINTING = ("wdt:P1071/wdt:P625", "wdt:P189/wdt:P625", "wdt:P170/wdt:P937/wdt:P625", "wdt:P1071/wdt:P625")
 ARTIST = 2  # PAINTING's "where the painter worked" level
+# archaeological cultures rarely have coordinates of their own: then the middle of their sites
+CULTURE = ("wdt:P625", "^wdt:P2596/wdt:P625", "wdt:P276/wdt:P625", "wdt:P17/wdt:P625")
 
 # the share of a category's minimum sitelinks an event needs, by when it began
 ERA = ((500, 0.35), (1500, 0.65))
 era = lambda year: next((f for until, f in ERA if year < until), 1)
+# and the share in parts of the world that wikipedia covers thinly, until when, inside
+# [west, south, east, north] boxes. the same scale is in app.js. the continents
+# are how the list query finds candidates before it knows where they are
+REGIONS = (
+    ((-170, -56, -30, 72), 1500, 0.5),  # the americas before columbus
+    ((-20, -36, 42, 21), 1880, 0.5),    # sub-saharan africa (south of egypt and the hejaz)
+    ((42, -36, 52, 11.5), 1880, 0.5),   # the horn, without yemen
+)
+CONTINENTS = {"Q49": 1500, "Q18": 1500, "Q15": 1880}  # north and south america, africa
+region = lambda year, lat, lon: next((f for (w, s, e, n), until, f in REGIONS
+                                      if w <= lon <= e and s <= lat <= n and year < until), 1)
 
 # name, wikidata class, kind, min sitelinks, date properties, title template[, places]
 CATEGORIES = [
@@ -57,11 +72,15 @@ CATEGORIES = [
     ("earthquakes", "Q7944", "disaster", 14, ("P585",), "{}"),
     ("eruptions", "Q7692360", "disaster", 10, ("P585", "P580"), "{}"),
     ("disasters", "Q3839081", "disaster", 20, ("P585", "P580"), "{}"),
+    ("fires", "Q168983", "disaster", 20, ("P585", "P580"), "{}"),  # no longer under disasters
+    ("floods", "Q8068", "disaster", 20, ("P585", "P580"), "{}"),
     ("epidemics", "Q44512", "disaster", 20, ("P580", "P585"), "{}"),
     ("expeditions", "Q2401485", "exploration", 12, ("P580", "P585"), "{}"),
     ("universities", "Q3918", "culture", 70, ("P571",), "{} founded"),
     ("expos", "Q172754", "culture", 20, ("P580", "P585"), "{}"),
     ("ancient-cities", "Q15661340", "political", 12, ("P571",), "{} founded"),
+    ("cultures", "Q465299", "culture", 20, ("P580", "P571"), "{}", CULTURE),
+    ("sites", "Q839954", "culture", 20, ("P571", "P580"), "{}"),
     ("frescoes", "Q134194", "art", 14, ("P571",), "{}", IN_SITU),
     ("murals", "Q219423", "art", 14, ("P571",), "{}", IN_SITU),
     ("mosaics", "Q133067", "art", 12, ("P571",), "{}", IN_SITU),
@@ -69,13 +88,21 @@ CATEGORIES = [
     ("paintings", "Q3305213", "art", 40, ("P571",), "{}", PAINTING),
 ]
 
-# everything over the minimum, plus older events over the lowest era threshold
+# categories only kept before this year: later dates on archaeological sites are mostly
+# when a park was declared or a dig began, not when the place was built
+UNTIL = {"cultures": 1500, "sites": 1500}
+
+# everything over the minimum, plus older events over the lowest era threshold, plus
+# events in the thinly covered continents (before their REGIONS dates) over the lowest
+# threshold of all
 LIST = """
 SELECT DISTINCT ?item ?sl WHERE {
   ?item wdt:P31/wdt:P279* wd:%(cls)s ; wikibase:sitelinks ?sl .
-  FILTER(?sl >= %(low)d)
+  FILTER(?sl >= %(rlow)d)
   OPTIONAL { ?item %(dates)s ?d }
-  FILTER(?sl >= %(min)d || (BOUND(?d) && YEAR(?d) < %(until)d))
+  OPTIONAL { ?item wdt:P30|wdt:P17/wdt:P30 ?cont . FILTER(?cont IN (%(conts)s)) }
+  FILTER(?sl >= %(min)d || (BOUND(?d) && YEAR(?d) < %(until)d && ?sl >= %(low)d) ||
+         (BOUND(?d) && BOUND(?cont) && (%(cont_until)s)))
 }
 """
 
@@ -150,10 +177,17 @@ def medoid(points):
 
 def events_for(name, cls, kind, min_sl, props, title, places, refresh):
     low = max(4, int(min_sl * ERA[0][1]))
+    # (not for paintings: there are hardly any from those places and times, and listing
+    # every painting with that few sitelinks times out)
+    rlow = low if places is PAINTING else max(4, int(min_sl * ERA[0][1] * min(f for _, _, f in REGIONS)))
     dates = "|".join(f"wdt:{p}" for p in props)
-    tag = {IN_SITU: "-situ", PAINTING: "-painting"}.get(places, "")
-    key = f"{name}-{min_sl}-{low}{tag}"  # thresholds and places in the cache name, so changing them refetches
-    listed = sparql(f"{key}-list", LIST % {"cls": cls, "min": min_sl, "low": low, "dates": dates, "until": ERA[-1][0]}, refresh)
+    tag = {IN_SITU: "-situ", PAINTING: "-painting", CULTURE: "-culture"}.get(places, "")
+    key = f"{name}-{min_sl}-{low}-{rlow}{tag}"  # thresholds and places in the cache name, so changing them refetches
+    listed = sparql(f"{key}-list", LIST % {
+        "cls": cls, "min": min_sl, "low": low, "rlow": rlow, "dates": dates, "until": ERA[-1][0],
+        "conts": ", ".join(f"wd:{c}" for c in CONTINENTS),
+        "cont_until": " || ".join(f"(?cont = wd:{c} && YEAR(?d) < {y})" for c, y in CONTINENTS.items()),
+    }, refresh)
     sitelinks = {r["item"]["value"].rsplit("/", 1)[1]: int(r["sl"]["value"]) for r in listed}
     qids = sorted(sitelinks)
     rows = []
@@ -196,9 +230,13 @@ def events_for(name, cls, kind, min_sl, props, title, places, refresh):
             continue  # the painter worked in several places: we don't know which
         lat, lon = medoid(sorted(it["coords"][level]))
         label = it["label"]
-        if not (MIN_YEAR <= start <= MAX_YEAR) or re.fullmatch(r"Q\d+", label):
+        if not (MIN_YEAR <= start < UNTIL.get(name, MAX_YEAR + 1)) or re.fullmatch(r"Q\d+", label):
             continue
-        if it["sl"] < min_sl * era(start):
+        # art only counts as from a thinly covered place if it was made or found there,
+        # not if that's just the museum it's in now
+        local = places not in (IN_SITU, PAINTING) or level <= 1
+        share = era(start) * (region(start, lat, lon) if local else 1)
+        if it["sl"] < max(4, min_sl * share):
             continue
         e = {
             "id": it["qid"].lower(),
@@ -210,7 +248,7 @@ def events_for(name, cls, kind, min_sl, props, title, places, refresh):
             e["end"] = end
         if prec < 9:
             e["approx"] = True
-        weight = it["sl"] / era(start)  # importance is relative to its era
+        weight = it["sl"] / share  # importance is relative to its era and part of the world
         e.update(lat=lat, lon=lon, importance=1 if weight >= 100 else 2 if weight >= 45 else 3)
         if it["wiki"]:
             e["wiki"] = it["wiki"]

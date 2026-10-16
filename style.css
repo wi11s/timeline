@@ -132,18 +132,13 @@ body.globe { background: var(--space); }
   font-size: 16px; font-style: italic; color: var(--muted);
 }
 
-/* explore: stories and regions to focus on */
+/* explore: topics and regions to focus on */
 #explore {
   position: fixed; top: 68px; right: 16px; width: min(380px, calc(100vw - 32px));
   max-height: calc(100vh - 180px); max-height: calc(100dvh - 180px); overflow: auto; overscroll-behavior: contain;
   padding: 10px 18px 14px; background: var(--panel); border: 1px solid var(--edge); border-radius: 16px;
   box-shadow: var(--float);
 }
-#explore .key {
-  display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 30px 4px 0; padding-bottom: 10px;
-  border-bottom: 1px solid var(--line); color: var(--muted); font-size: 14px; font-style: italic;
-}
-#explore .key svg.kind { width: 15px; height: 15px; }
 #explore h2 { margin: 10px 0 2px; font-size: 13px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 #explore ul { margin: 0; padding: 0; list-style: none; }
 #explore li + li { border-top: 1px solid var(--line); }

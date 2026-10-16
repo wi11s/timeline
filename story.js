@@ -104,7 +104,7 @@ try { localStorage.removeItem("guided"); } catch {} // the old guided toggle's s
 let focuses = [];
 fetch("data/focuses.json").then((r) => r.json()).then((list) => {
   focuses = list;
-  for (const group of ["stories", "regions"]) {
+  for (const group of ["topics", "regions"]) {
     const ul = $("explore").querySelector(`[data-group="${group}"]`);
     ul.replaceChildren(...list.filter((f) => f.group === group).map((f) => {
       const li = document.createElement("li"), b = document.createElement("button");
@@ -227,10 +227,6 @@ function endFocus() {
 $("focus-chip").querySelector("button").onclick = endFocus;
 
 // --- the explore panel ---------------------------------------------------------------------
-
-// a key to the pins' glyphs
-$("explore").querySelector(".key").innerHTML = Object.keys(KIND_ICONS)
-  .map((k) => `<span>${kindSvg(k)}${k}</span>`).join("");
 
 function openExplore() {
   closeCard();
