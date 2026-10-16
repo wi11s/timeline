@@ -132,6 +132,7 @@ function startFocus(f) {
   chip.querySelector("b").textContent = f.title;
   chip.querySelector("small").textContent = `${fmt(f.from)} – ${f.to >= MAX_YEAR ? "today" : fmt(f.to)}`;
   chip.hidden = false;
+  $("explore-toggle").classList.add("on"); // lit while a focus plays
   const band = $("band");
   band.style.left = `${toPos(f.from) * 100}%`;
   band.style.width = `${(toPos(Math.min(f.to, MAX_YEAR)) - toPos(f.from)) * 100}%`;
@@ -217,6 +218,7 @@ function endFocus() {
   state.focus = null;
   state.queue = [];
   $("focus-chip").hidden = true;
+  $("explore-toggle").classList.remove("on");
   $("band").hidden = true;
   drawDensity();
   layerDirty = true;

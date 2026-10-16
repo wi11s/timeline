@@ -65,6 +65,7 @@
       <svg data-icon="search" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11a8 8 0 1 0 16 0a8 8 0 1 0 -16 0M21 21l-4.3-4.3"/></svg>
       <input type="search" placeholder="Search events" aria-label="search events" role="combobox" aria-controls="results" aria-expanded="false" aria-autocomplete="list" autocomplete="off" spellcheck="false" enterkeyhint="go">
     </label>
+    <div id="nav-end">
     <div class="bar">
     <button id="explore-toggle" aria-expanded="false" aria-controls="explore" title="explore a region or a story">
       <svg data-icon="compass" viewBox="0 0 24 24" aria-hidden="true"><path d="M16.24 7.76l-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265zM2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0"/></svg>
@@ -83,6 +84,9 @@
       <span>Contribute</span>
     </a>
     </div>
+    <!-- the focus being played, under explore -->
+    <div id="focus-chip" hidden><span><small></small><b></b></span><button aria-label="leave this focus" title="leave this focus"><svg data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+    </div>
   </nav>
   <ul id="results" role="listbox" aria-label="matching events" hidden></ul>
   <section id="explore" hidden aria-label="explore">
@@ -93,7 +97,6 @@
     <h2>Regions</h2>
     <ul data-group="regions"></ul>
   </section>
-  <div id="focus-chip" hidden><span><small></small><b></b></span><button aria-label="leave this focus" title="leave this focus"><svg data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
   <article id="card" hidden>
     <img alt="" hidden>
     <button id="close" aria-label="close"><svg data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>

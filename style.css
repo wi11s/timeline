@@ -78,7 +78,7 @@ body::after {
 .bar > :hover { background: var(--hover); }
 .bar > :focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; border-radius: 999px; }
 .bar > [hidden] { display: none; }
-.bar > [aria-pressed="true"], .bar > [aria-expanded="true"] { color: var(--accent); background: color-mix(in srgb, var(--accent) 11%, transparent); }
+.bar > [aria-pressed="true"], .bar > [aria-expanded="true"], #explore-toggle.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 11%, transparent); }
 .bar svg { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 #contribute svg { fill: currentColor; stroke: none; }
 
@@ -161,14 +161,22 @@ body.globe { background: var(--space); }
   background: none; color: var(--muted); font: 20px/1 var(--serif); cursor: pointer;
 }
 
-/* the focus being played, above the dock */
+/* the story column, bottom left, so the year, the story and its place on the map are
+   read together: the dock (with the year) at the bottom, and the card (or the quiz)
+   standing on it, up to the zoom buttons. --stack is where the card stands */
+:root { --stack: 112px; --head: 148px; }
+
+/* the focus being played, hanging under explore (which lights up while it plays) */
+#nav-end { position: relative; }
 #focus-chip {
-  position: fixed; left: max(16px, env(safe-area-inset-left)); bottom: 104px;
-  display: flex; align-items: center; gap: 10px; padding: 7px 6px 8px 14px;
+  position: absolute; top: calc(100% + 8px); left: 0; box-sizing: border-box;
+  width: max-content; max-width: min(345px, calc(100vw - 32px)); height: 54px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 6px 1px 14px;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--lift);
 }
 #focus-chip::before { content: ""; align-self: stretch; width: 3px; margin: 1px 0 1px -6px; border-radius: 2px; background: var(--accent); }
 #focus-chip[hidden] { display: none; }
+#focus-chip > span { flex: 1; min-width: 0; }
 #focus-chip small { display: block; color: var(--muted); font-size: 12.5px; font-style: italic; }
 #focus-chip b { font-size: 16px; font-weight: 500; }
 #focus-chip button { border: 0; background: none; color: var(--muted); font: 20px/1 var(--serif); cursor: pointer; padding: 2px 6px; }
@@ -177,8 +185,8 @@ body.globe { background: var(--space); }
 /* the card: the story being told, or whatever was clicked; a line joins it to its pin */
 #card {
   -webkit-user-select: text; user-select: text;
-  position: fixed; top: 68px; right: 16px; width: min(345px, calc(100vw - 32px));
-  max-height: calc(100vh - 180px); max-height: calc(100dvh - 180px); overflow: auto; overscroll-behavior: contain;
+  position: fixed; left: max(16px, env(safe-area-inset-left)); bottom: var(--stack); width: min(345px, calc(100vw - 32px));
+  max-height: calc(100vh - var(--stack) - var(--head)); max-height: calc(100dvh - var(--stack) - var(--head)); overflow: auto; overscroll-behavior: contain;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 16px; box-shadow: var(--float);
 }
 #card img {
@@ -222,8 +230,8 @@ body.globe { background: var(--space); }
 body.quizzing #search, body.quizzing #explore-toggle { display: none; }
 body.quizzing #play { opacity: .35; pointer-events: none; }
 #quiz {
-  position: fixed; top: 68px; right: 16px; width: min(345px, calc(100vw - 32px));
-  max-height: calc(100vh - 180px); max-height: calc(100dvh - 180px); overflow: auto; overscroll-behavior: contain;
+  position: fixed; left: max(16px, env(safe-area-inset-left)); bottom: var(--stack); width: min(345px, calc(100vw - 32px));
+  max-height: calc(100vh - var(--stack) - var(--head)); max-height: calc(100dvh - var(--stack) - var(--head)); overflow: auto; overscroll-behavior: contain;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 16px; box-shadow: var(--float);
 }
 #quiz[hidden] { display: none; }
@@ -409,8 +417,9 @@ svg.kind.k-music { stroke: var(--k-music); }
   #era-tag { left: auto; right: 60px; bottom: calc(100% + 17px); transform: none; font-size: 12.5px; box-shadow: none; } /* in the row above, by the speed button */
   #ticks .minor { display: none; }
 
+  :root { --stack: calc(max(10px, env(safe-area-inset-bottom)) + 128px); }
   #card {
-    top: auto; bottom: calc(max(10px, env(safe-area-inset-bottom)) + 128px); left: 10px; right: 10px; width: auto;
+    bottom: var(--stack); left: 10px; right: 10px; width: auto;
     max-height: 50vh; max-height: 50dvh;
   }
   #card img { height: 110px; }
@@ -428,7 +437,7 @@ svg.kind.k-music { stroke: var(--k-music); }
   #card.compact .wiki, #card.compact .related-wrap { display: none; }
   #card.compact #close { top: 6px; right: 6px; width: 26px; height: 26px; font-size: 18px; box-shadow: none; }
   /* the quiz: a little taller than a story (QUIZ_STRIP in quiz.js), the picture beside the title */
-  #quiz { top: auto; bottom: calc(max(10px, env(safe-area-inset-bottom)) + 128px); left: 10px; right: 10px; width: auto; height: 262px; max-height: none; }
+  #quiz { bottom: var(--stack); left: 10px; right: 10px; width: auto; height: 262px; max-height: none; }
   #quiz img { float: left; width: 72px; height: 72px; margin: 12px 12px 6px 12px; border-radius: 9px; }
   #quiz .body { padding: 11px 14px 13px; }
   #quiz .body > :is(.hint, .guess, .result) { clear: left; }
@@ -438,5 +447,10 @@ svg.kind.k-music { stroke: var(--k-music); }
   #quiz .desc { -webkit-line-clamp: 4; line-clamp: 4; }
   #quiz .score { font-size: 34px; }
   #explore { top: auto; bottom: calc(max(10px, env(safe-area-inset-bottom)) + 128px); left: 10px; right: 10px; width: auto; max-height: 60vh; max-height: 60dvh; }
-  #focus-chip { left: 10px; bottom: calc(max(10px, env(safe-area-inset-bottom)) + 128px); }
+  /* the focus: a line under the top buttons, from their right edge (clear of the zoom buttons) */
+  #focus-chip { left: auto; right: 0; height: 38px; max-width: calc(100vw - 80px); padding: 0 4px 0 14px; }
+  #focus-chip > span { display: flex; align-items: baseline; gap: 8px; min-width: 0; white-space: nowrap; overflow: hidden; }
+  #focus-chip small { order: 1; overflow: hidden; text-overflow: ellipsis; }
+  #focus-chip b { font-size: 15px; }
+  #focus-chip button { width: 26px; height: 26px; }
 }

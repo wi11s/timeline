@@ -183,19 +183,20 @@ let dpr = 1, base = { s: 1, x: 0, y: 0 }, minZoom = 1;
 const dockSpace = () => (innerWidth < 600 ? 136 : 92); // the timeline dock along the bottom
 
 // the map's part of the screen, so a story never covers the map it's about: above the
-// dock and, on a wide screen, left of the card's column; on a phone, between the top
-// buttons and the (compact) story card, which sits just above the dock there (or the
-// quiz, a little taller)
+// dock and, on a wide screen, right of the story column (the card, on the dock at the
+// bottom left); on a phone, between the top buttons and the (compact) story card, which
+// sits just above the dock there (or the quiz, a little taller), and the focus being
+// played, under the top buttons
 const CARD_COLUMN = 377, CARD_STRIP = 128;
 function mapArea() {
   if (innerWidth < 600) {
     const dock = document.querySelector("footer").getBoundingClientRect().top || innerHeight - dockSpace();
-    const strip = state.quiz ? QUIZ_STRIP : CARD_STRIP;
-    const top = 58, h = Math.max(160, dock - 10 - strip - 8 - top);
+    const strip = state.quiz ? QUIZ_STRIP : CARD_STRIP, chip = $("focus-chip");
+    const top = chip.hidden ? 58 : 58 + chip.offsetHeight + 8, h = Math.max(160, dock - 10 - strip - 8 - top);
     return { cx: innerWidth / 2, cy: top + h / 2, w: innerWidth, h };
   }
   const side = innerWidth >= 1000 ? CARD_COLUMN : 0, h = innerHeight - dockSpace();
-  return { cx: (innerWidth - side) / 2, cy: h / 2 + 8, w: innerWidth - side, h };
+  return { cx: side + (innerWidth - side) / 2, cy: h / 2 + 8, w: innerWidth - side, h };
 }
 let goal = null;   // view we're easing toward (wheel / double-click zoom)
 let fling = null;  // pan velocity after a drag, px/s
@@ -1110,7 +1111,8 @@ function endStory() {
 // the line from the card to its event's pin, drawn under the pins and the card:
 // an s-curve leaving the pin sideways (upwards on a phone, where the card is below).
 // it meets the card where the card rests (not where its entrance animation has it), at
-// a point that doesn't move as the card's picture and text load in, and it draws itself
+// a point that doesn't move as the card's picture and text load in (the card stands on
+// the dock, so that's measured from its foot), and it draws itself
 // from the pin to the card as the card appears
 const PING_MS = 2200, TETHER_MS = 380;
 function drawTether() {
@@ -1122,7 +1124,7 @@ function drawTether() {
   const r = { left: card.offsetLeft, top: card.offsetTop, right: card.offsetLeft + card.offsetWidth, bottom: card.offsetTop + card.offsetHeight };
   if (x > r.left - 12 && x < r.right + 12 && y > r.top - 12 && y < r.bottom + 12) return; // under the card
   const ax = phone ? clamp(x, r.left + 28, r.right - 28) : x < r.left ? r.left : r.right;
-  const ay = phone ? (y < r.top ? r.top : r.bottom) : clamp(y, r.top + 30, r.top + 110);
+  const ay = phone ? (y < r.top ? r.top : r.bottom) : clamp(y, Math.max(r.top + 30, r.bottom - 150), r.bottom - 40);
   const c1 = phone ? [x, (y + ay) / 2] : [(x + ax) / 2, y], c2 = phone ? [ax, (y + ay) / 2] : [(x + ax) / 2, ay];
   const grow = ease(clamp((performance.now() - state.cardAt) / TETHER_MS, 0, 1));
   let length = 0; // of the curve, for drawing part of it
