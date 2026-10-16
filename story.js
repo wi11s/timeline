@@ -127,7 +127,7 @@ function startFocus(f) {
   // a focus plays its whole stretch in about FOCUS_S seconds, in log-years like everything else
   const seconds = f.seconds ?? FOCUS_S, to = Math.min(f.to, MAX_YEAR);
   state.focus = { ...f, rate: (lg(f.from) - lg(to)) / seconds };
-  state.focus.reel = buildReel({ from: f.from, to, rate: state.focus.rate, keep: inFocus, stops: () => true, fits: seconds / 2.5 });
+  state.focus.reel = buildReel({ from: f.from, to, rate: state.focus.rate, keep: inFocus, stops: () => true, fits: f.every ? Infinity : seconds / 2.5 });
   const chip = $("focus-chip");
   chip.querySelector("b").textContent = f.title;
   chip.querySelector("small").textContent = `${fmt(f.from)} – ${f.to >= MAX_YEAR ? "today" : fmt(f.to)}`;
@@ -166,19 +166,17 @@ const turning = (e) => e.curated && e.importance === 1;
 const nearby = (a, b) => Math.hypot((a.lon - b.lon) * Math.cos((a.lat * Math.PI) / 180), a.lat - b.lat) < 15;
 
 // `fits`: how many stories there's time for. a focus with no more events than that plays
-// every one of them, however close together (playback waits for each to be read)
+// every one of them, however close together (playback waits for each to be read), as
+// does one marked `every` in data/focuses.json: a hand-picked set, all worth telling
 function buildReel({ from, to, rate, minWeight = 0, keep = () => true, stops = featured, fits = 0 }) {
   const pool = [];
   for (const e of state.events) {
     if (e.start >= from && e.start <= to && (e.weight >= minWeight || e.curated) && keep(e)) pool.push({ e, t: lg(e.start), s: interest(e) });
   }
   const gap = pool.length <= fits ? 0 : REEL_S * rate;
-  // the finale (data/events.json) is the last story: picked first, with nothing after it
-  const finale = pool.find((c) => c.e.finale);
-  if (finale) for (const c of pool) if (c !== finale && c.e.start >= finale.e.start) c.out = true;
   // greedy: take the best that still fits, again and again, judging each against the
   // picks either side of it. whatever's too close to a pick stays out
-  const picks = finale ? [Object.assign(finale, { out: true })] : [];
+  const picks = [];
   for (;;) {
     let best = null, bestS = 0;
     for (const c of pool) {

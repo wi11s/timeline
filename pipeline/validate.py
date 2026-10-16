@@ -5,7 +5,7 @@ from pathlib import Path
 
 KINDS = {"war", "battle", "political", "culture", "science", "exploration", "disaster", "art", "music"}
 REQUIRED = {"id": str, "title": str, "kind": str, "start": int, "lat": (int, float), "lon": (int, float), "importance": int}
-OPTIONAL = {"end": int, "approx": bool, "wiki": str, "qid": str, "sitelinks": int, "finale": bool}
+OPTIONAL = {"end": int, "approx": bool, "wiki": str, "qid": str, "sitelinks": int}
 
 
 def errors(events):
@@ -33,8 +33,6 @@ def errors(events):
             yield f"{who}: lat/lon out of range"
         if e.get("importance") not in (1, 2, 3):
             yield f"{who}: importance must be 1, 2 or 3"
-    if sum(bool(e.get("finale")) for e in events) > 1:
-        yield "only one event can be the finale"
 
 
 if __name__ == "__main__":

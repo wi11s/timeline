@@ -44,7 +44,7 @@ const state = {
   story: null,          // the reel's event being told in the card
   cardAt: -1e9,         // when the card last appeared or changed
   queue: [],            // events waiting for their turn
-  ease: 1,              // playback slows while there's something to read
+  ease: 1,              // playback slows while there's something to read, and hurries through quiet stretches
   stop: null,           // the guided stop in progress
   focus: null,          // the focus being played (story.js)
   flight: null,         // a camera flight (story.js)
@@ -1303,12 +1303,26 @@ function setPlaying(on) {
   invalidate();
 }
 
-// playback slows while a fresh note is being read, and nearly stops at a guided stop
+// a quiet stretch, with no story due for a while (before much was written down, say),
+// plays faster once the story up has been read: up to QUIET_MAX× as fast, easing back
+// to normal as the next story nears, so a long gap takes seconds rather than minutes
+const QUIET_S = 1.2, QUIET_MAX = 10;
+function quietness(rate) {
+  const st = state.story;
+  if (st?.fromPlay && !wasRead(st)) return 1;
+  const end = state.focus ? Math.min(state.focus.to, MAX_YEAR) : MAX_YEAR;
+  const next = Math.min(currentReel().order.find((e) => e.start > state.year)?.start ?? end, end);
+  const ahead = (lg(state.year) - lg(next)) / (rate * state.speed); // seconds till the next story, as things stand
+  return clamp(ahead / QUIET_S, 1, QUIET_MAX);
+}
+
+// playback slows while a fresh note is being read, nearly stops at a guided stop, and
+// hurries through quiet stretches
 function stepPlay(dt) {
   if (!state.playing) return false;
   const t = performance.now(), fresh = !!state.story?.fromPlay && t - state.story.born < 1200;
   const rate = state.focus ? state.focus.rate : PACE;
-  const target = state.stop || holding(rate) ? 0.04 : fresh ? 0.5 : 1;
+  const target = state.stop || holding(rate) ? 0.04 : fresh ? 0.5 : quietness(rate);
   state.ease += (target - state.ease) * (1 - Math.exp(-dt * (target < state.ease ? 6 : 4)));
   setPos(toPos(lgShift(toYear(state.pos), dt * rate * state.speed * state.ease)));
   stepStop(dt);
