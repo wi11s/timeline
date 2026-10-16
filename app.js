@@ -465,7 +465,7 @@ const dark = matchMedia("(prefers-color-scheme: dark)");
 let colors = {};
 function readColors() {
   const css = getComputedStyle(document.documentElement);
-  for (const k of ["bg", "land", "line", "ink", "accent", "coast", "river", "halo", "badge"]) colors[k] = css.getPropertyValue(`--${k}`).trim();
+  for (const k of ["bg", "land", "line", "ink", "muted", "accent", "coast", "river", "halo", "badge", "serif"]) colors[k] = css.getPropertyValue(`--${k}`).trim();
   colors.realms = Array.from({ length: REALMS }, (_, i) => css.getPropertyValue(`--realm-${i}`).trim());
   colors.space = css.getPropertyValue("--space").trim();
   colors.kinds = Object.fromEntries(Object.keys(KIND_ICONS).map((k) => [k, css.getPropertyValue(`--k-${k}`).trim()]));
@@ -1208,6 +1208,8 @@ function buildTicks() {
 // each bar is in its era's colour, strong where it's been played
 const density = { bins: null };
 function drawDensity() {
+  $("track").classList.toggle("ruler", rulerOn()); // the quiz on a phone draws the timeline its own way
+  if (rulerOn()) return drawRuler();
   const cv = $("density"), w = cv.clientWidth, h = cv.clientHeight, r = devicePixelRatio || 1;
   if (!w || !state.events.length) return;
   if (!density.bins || density.w !== w || density.focus !== state.focus) {
@@ -1357,11 +1359,126 @@ function trackPos(ev) {
 
 $("track").addEventListener("pointerdown", (ev) => {
   $("track").setPointerCapture(ev.pointerId);
+  if (rulerOn()) return rulerDown(ev);
   setPos(trackPos(ev));
   const move = (e) => setPos(trackPos(e));
   $("track").addEventListener("pointermove", move);
   $("track").addEventListener("pointerup", () => $("track").removeEventListener("pointermove", move), { once: true });
 });
+
+// the quiz on a phone: a stretch of the timeline that swipes under a fixed handle in the
+// middle, so a thumb can set the year exactly. it's on the log scale playback uses, with
+// as many pixels for a year now as for a few decades in antiquity, the way the quiz scores
+const RULER_SPAN = 0.7; // log-years across the track: 35 years around 2000, a century around 1900, millennia in the bronze age
+const RULER_STEPS = [1, 5, 10, 50, 100, 500, 1000];
+const rulerOn = () => !!state.quiz && innerWidth < 600;
+
+function drawRuler() {
+  const cv = $("ruler"), w = cv.clientWidth, h = cv.clientHeight, r = devicePixelRatio || 1;
+  if (!w) return;
+  fitCanvas(cv, Math.round(w * r), Math.round(h * r));
+  const c = cv.getContext("2d"), k = w / RULER_SPAN, at = lg(toYear(state.pos)), line = 30;
+  const x = (y) => w / 2 + (at - lg(y)) * k;
+  const yearAt = (px) => PRESENT - Math.exp(at - (px - w / 2) / k);
+  const from = Math.max(MIN_YEAR, yearAt(0)), to = Math.min(MAX_YEAR, yearAt(w));
+  c.setTransform(r, 0, 0, r, 0, 0);
+  c.clearRect(0, 0, w, h);
+  c.lineWidth = 3; // the baseline, in each era's colour
+  ERAS.forEach((era, i) => {
+    const a = Math.max(from, era.from), b = Math.min(to, ERAS[i + 1]?.from ?? MAX_YEAR);
+    if (a >= b) return;
+    c.strokeStyle = colors.eras[i];
+    c.beginPath(); c.moveTo(x(a), line); c.lineTo(x(b), line); c.stroke();
+  });
+  // a tick wherever there's room (8px), and a year on one every 64px
+  const step = (y, px) => RULER_STEPS.find((s) => (s * k) / (PRESENT - y) >= px) ?? RULER_STEPS.at(-1);
+  const inc = step(to, 8); // the finest step, at the right-hand (most recent) end
+  c.font = `italic 13px ${colors.serif}`;
+  c.textAlign = "center";
+  for (let y = Math.ceil(from / inc) * inc; y <= to; y += inc) {
+    if (y % step(y, 8)) continue;
+    const major = y % step(y, 64) === 0, px = x(y || 1); // there's no year 0: 1 ce
+    c.fillStyle = colors.ink;
+    c.globalAlpha = major ? 0.55 : 0.3;
+    c.fillRect(Math.round(px) - 0.5, line - (major ? 11 : 6), 1, major ? 11 : 6);
+    c.globalAlpha = 1;
+    if (major) {
+      c.fillStyle = colors.muted;
+      c.fillText(y === 0 ? "1 ce" : y < 0 ? `${-y} bce` : y, px, line + 17);
+    }
+  }
+  if (state.quiz?.phase === "answer") { // the guess, left behind as the answer comes to the middle
+    const gx = x(state.quiz.round.guess);
+    c.strokeStyle = colors.ink;
+    c.globalAlpha = 0.55;
+    c.lineWidth = 2;
+    c.setLineDash([2, 2]);
+    c.beginPath(); c.moveTo(gx, 0); c.lineTo(gx, line); c.stroke();
+    c.setLineDash([]);
+    c.globalAlpha = 1;
+    c.fillStyle = colors.badge;
+    c.beginPath(); c.arc(gx, line, 5, 0, Math.PI * 2); c.fill();
+    c.globalAlpha = 0.55; c.stroke(); c.globalAlpha = 1;
+  }
+  c.fillStyle = colors.accent; // the handle, and its knob on the baseline
+  c.fillRect(w / 2 - 1, 0, 2, line);
+  c.beginPath(); c.arc(w / 2, line, 6.5, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = colors.badge;
+  c.lineWidth = 2;
+  c.stroke();
+}
+
+// the timeline goes to a log-year set on the ruler. false at either end
+function rulerSet(g) {
+  const y = clamp(PRESENT - Math.exp(g), MIN_YEAR, MAX_YEAR);
+  state.pos = toPos(y);
+  applyYear(roundYear(y));
+  return y > MIN_YEAR && y < MAX_YEAR;
+}
+
+// runs step(ms since the last frame) every frame until it returns false, then settles the
+// ruler on the year in the middle. a new round, answer or touch cancels it
+let rulerFrame = 0;
+function rulerGlide(step) {
+  cancelAnimationFrame(rulerFrame);
+  const { round, phase } = state.quiz;
+  let t = performance.now();
+  const frame = (now) => {
+    const dt = now - t;
+    t = now;
+    if (!rulerOn() || state.quiz.round !== round || state.quiz.phase !== phase) return;
+    if (step(dt)) rulerFrame = requestAnimationFrame(frame);
+    else setYear(state.year);
+  };
+  rulerFrame = requestAnimationFrame(frame);
+}
+
+// the year follows the finger and, let go, keeps going and slows; a tap brings the year
+// tapped to the middle
+function rulerDown(ev) {
+  cancelAnimationFrame(rulerFrame);
+  const track = $("track"), k = track.clientWidth / RULER_SPAN, g0 = lg(toYear(state.pos)), x0 = ev.clientX, t0 = ev.timeStamp;
+  let lastX = x0, lastT = t0, v = 0; // px per ms
+  const move = (e) => {
+    const dt = e.timeStamp - lastT;
+    if (dt > 0) v = 0.8 * ((e.clientX - lastX) / dt) + 0.2 * v;
+    lastX = e.clientX;
+    lastT = e.timeStamp;
+    rulerSet(g0 + (e.clientX - x0) / k);
+  };
+  track.addEventListener("pointermove", move);
+  track.addEventListener("pointerup", (e) => {
+    track.removeEventListener("pointermove", move);
+    if (Math.abs(e.clientX - x0) < 6 && e.timeStamp - t0 < 300) {
+      const r = track.getBoundingClientRect(), to = g0 - (e.clientX - r.left - r.width / 2) / k;
+      let t = 0;
+      return rulerGlide((dt) => { t = Math.min(1, t + dt / 350); rulerSet(g0 + (to - g0) * ease(t)); return t < 1; });
+    }
+    if (e.timeStamp - lastT > 80) v = 0; // held still before letting go
+    let g = lg(toYear(state.pos));
+    rulerGlide((dt) => { g += (v * dt) / k; v *= Math.exp(-dt / 325); return rulerSet(g) && Math.abs(v) > 0.02; });
+  }, { once: true });
+}
 
 // scrolling over the timeline scrubs through time
 document.querySelector("footer").addEventListener("wheel", (ev) => {

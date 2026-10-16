@@ -104,7 +104,7 @@ function ask(i) {
       <input type="text" enterkeyhint="go" aria-label="your guess, a year (negative for BCE)" maxlength="6">
       <button class="primary" type="submit">Guess</button>
     </form>
-    <p class="tip">negative years are BCE, or drag the timeline</p>
+    <p class="tip">negative years are BCE, or ${innerWidth < 600 ? "swipe" : "drag"} the timeline</p>
   </div>`);
   fillHeader(r);
   showGuess(r.guess);

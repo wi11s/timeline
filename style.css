@@ -222,8 +222,8 @@ body.globe { background: var(--space); }
 
 /* the quiz (quiz.js), where the card goes. while it's on, the timeline is for guessing:
    no playback, and no search or explore, which would give the answers away */
-body.quizzing #search, body.quizzing #explore-toggle { display: none; }
-body.quizzing #play { opacity: .35; pointer-events: none; }
+body.quizzing #search, body.quizzing #explore-toggle, body.quizzing #play, body.quizzing #options { display: none; }
+body.quizzing footer { padding-left: 14px; } /* as on the right */
 #quiz {
   position: fixed; left: max(16px, env(safe-area-inset-left)); bottom: var(--stack); width: min(345px, calc(100vw - 32px));
   max-height: calc(100vh - var(--stack) - var(--head)); max-height: calc(100dvh - var(--stack) - var(--head)); overflow: auto; overscroll-behavior: contain;
@@ -352,6 +352,14 @@ footer {
   border-radius: 50%; background: var(--badge); border: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
 }
 #era-tag i { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--era); }
+/* the quiz on a phone: a stretch of the timeline that swipes under a fixed handle
+   (drawRuler in app.js), fading out at the ends */
+#ruler {
+  display: none; position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;
+  mask-image: linear-gradient(to right, transparent, #000 14%, #000 86%, transparent);
+}
+#track.ruler #ruler { display: block; }
+#track.ruler::before, #track.ruler > :not(#ruler, #era-tag) { display: none; }
 
 #options { display: flex; gap: 6px; }
 #options button {
@@ -410,6 +418,9 @@ svg.kind.k-music { stroke: var(--k-music); }
   #options button { height: 38px; }
   #track { order: 1; flex-basis: 100%; min-height: 52px; } /* last, full width: a comfortable thumb target */
   #era-tag { left: auto; right: 60px; bottom: calc(100% + 17px); transform: none; font-size: 12.5px; box-shadow: none; } /* in the row above, by the speed button */
+  body.quizzing footer { padding-left: 12px; }
+  body.quizzing #year { line-height: 44px; } /* the row stays as tall as with the play button, so the quiz panel sits on it */
+  body.quizzing #era-tag { right: 0; } /* no speed button to sit by */
   #ticks .minor { display: none; }
 
   :root { --stack: calc(max(10px, env(safe-area-inset-bottom)) + 128px); }
