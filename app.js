@@ -36,6 +36,7 @@ const state = {
   borders: new Map(),   // year -> promise of prepared features
   wanted: null,         // snapshot year we're loading / showing
   shown: null,          // features currently drawn
+  plain: false,         // just land and water, no territories (a quiz question is up)
   events: [],           // heaviest first
   pins: [],             // pins drawn last frame, for hit testing
   hoverEvent: null,
@@ -446,6 +447,13 @@ const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 const progress = (tr) => ease(Math.min(1, (performance.now() - tr.start) / tr.dur));
 
 function showBorders(feats) {
+  if (revealing) { // after a plain map, the year's own borders come straight in (the globe fades them)
+    revealing = false;
+    state.plain = false;
+    state.transition = null;
+    state.shown = feats;
+    return restyle();
+  }
   const tr = state.transition;
   // scrubbing fast through many snapshots: just swap, each transition costs a few frames
   if (globe.on) state.transition = null;
@@ -457,6 +465,25 @@ function showBorders(feats) {
   layerDirty = true;
   globeStale();
   invalidate();
+}
+
+// while a quiz question is up the map is just land and water: territories would hint at
+// the year, and loading and repainting them as the guess moves is what makes it slow.
+// turned off, it stays plain until the year's own borders are in, then shows them
+let revealing = false;
+function restyle() {
+  layerDirty = true;
+  globeStale(true);
+  invalidate();
+}
+function setPlain(on) {
+  if (on) {
+    revealing = false;
+    if (!state.plain) { Object.assign(state, { plain: true, transition: null, hoverRealm: null, hoverLabel: null }); restyle(); }
+  } else if (state.plain && !revealing) {
+    if (snapshotFor(state.year) === state.wanted && state.shown) { state.plain = false; restyle(); }
+    else { revealing = true; syncBorders(state.year); }
+  }
 }
 
 // --- rendering -----------------------------------------------------------------
@@ -489,9 +516,9 @@ function tick(now) {
   busy = stepView(dt) || busy;
   busy = pumpStories() || busy;
   if (state.transition && progress(state.transition) >= 1) state.transition = null;
-  busy ||= !!state.transition || (globe.on && globeBusy()) || now - state.cardAt < TETHER_MS; // the card's line drawing in
+  busy ||= !!state.transition || now - state.cardAt < TETHER_MS; // the card's line drawing in
   draw();
-  if (busy) invalidate();
+  if (busy || (globe.on && globeBusy())) invalidate(); // after drawing: that's where the globe starts a fade
 }
 
 function visibleEvents() {
@@ -677,6 +704,11 @@ const rough1 = document.createElement("canvas"), rough2 = document.createElement
 const fitCanvas = (cv, w, h) => { if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; } };
 
 function paintTerritories(c, feats, reach, key = "path") {
+  if (state.plain) {
+    c.fillStyle = colors.land;
+    for (const f of feats) c.fill(f[key]);
+    return;
+  }
   const rough = feats.filter((f) => f.rough), exact = feats.filter((f) => !f.rough);
   for (const f of rough) { // crisp underneath: shows through where the blur thins at the coast
     c.fillStyle = fillOf(f);
@@ -728,6 +760,7 @@ function softEdges(c, rough, blur, key, m) {
 }
 
 function strokeBorders(c, feats, alpha) {
+  if (state.plain) return;
   c.globalAlpha = alpha;
   c.lineWidth = 0.7 / (base.s * view.k);
   c.strokeStyle = colors.line;
@@ -764,7 +797,7 @@ function drawWaters(c, placed = []) {
 // realm names: big realms in spaced capitals sized to the realm, small ones in italics
 function drawLabels(c, feats, alpha, hits) {
   const placed = [];
-  if (!feats || alpha <= 0) return placed;
+  if (!feats || alpha <= 0 || state.plain) return placed;
   const scale = pixelsPerUnit();
   c.textAlign = "center";
   c.textBaseline = "middle";
@@ -1283,7 +1316,10 @@ function applyYear(year) {
   clearTimeout(hashTimer);
   hashTimer = setTimeout(() => { try { history.replaceState(null, "", `#${state.year}`); } catch {} }, 250);
   if (state.wanted !== null) notify(prev, year);
+  if (!state.plain || revealing) syncBorders(year);
+}
 
+function syncBorders(year) {
   const snap = snapshotFor(year);
   if (snap === state.wanted) return;
   state.wanted = snap;
@@ -1458,17 +1494,18 @@ function rulerGlide(step) {
 function rulerDown(ev) {
   cancelAnimationFrame(rulerFrame);
   const track = $("track"), k = track.clientWidth / RULER_SPAN, g0 = lg(toYear(state.pos)), x0 = ev.clientX, t0 = ev.timeStamp;
-  let lastX = x0, lastT = t0, v = 0; // px per ms
+  let lastX = x0, lastT = t0, v = 0, pending = 0; // px per ms
   const move = (e) => {
     const dt = e.timeStamp - lastT;
     if (dt > 0) v = 0.8 * ((e.clientX - lastX) / dt) + 0.2 * v;
     lastX = e.clientX;
     lastT = e.timeStamp;
-    rulerSet(g0 + (e.clientX - x0) / k);
+    pending ||= requestAnimationFrame(() => { pending = 0; rulerSet(g0 + (lastX - x0) / k); }); // a touch can move faster than frames
   };
   track.addEventListener("pointermove", move);
   track.addEventListener("pointerup", (e) => {
     track.removeEventListener("pointermove", move);
+    cancelAnimationFrame(pending);
     if (Math.abs(e.clientX - x0) < 6 && e.timeStamp - t0 < 300) {
       const r = track.getBoundingClientRect(), to = g0 - (e.clientX - r.left - r.width / 2) / k;
       let t = 0;
@@ -1515,6 +1552,7 @@ function eventAt(x, y, touch = false) {
 }
 
 function realmAt(x, y) {
+  if (state.plain) return null;
   if (globe.on) {
     const g = globeGeo(x, y);
     if (!g) return null;

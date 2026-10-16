@@ -96,6 +96,7 @@ function fillHeader(r) {
 function ask(i) {
   const q = state.quiz, r = q.rounds[i];
   Object.assign(q, { i, round: r, phase: "ask", asking: true });
+  setPlain(true); // no territories while guessing (app.js): they'd hint at the year
   setGuess(1); // each round starts from 1 CE, not wherever the last answer left the timeline
   $("guess-mark").hidden = true;
   render(`${header(r, i)}
@@ -206,6 +207,7 @@ function sweep(from, to, ms = 900) {
     state.pos = toPos(from) + (toPos(to) - toPos(from)) * t;
     applyYear(t < 1 ? roundYear(toYear(state.pos)) : to);
     if (t < 1) requestAnimationFrame(step);
+    else setPlain(false); // and there, the world as it was that year
   };
   requestAnimationFrame(step);
 }
@@ -215,6 +217,7 @@ function finish() {
   if (record) saveBest(score);
   q.phase = "done";
   state.selected = null;
+  setPlain(false);
   $("guess-mark").hidden = true;
   render(`<div class="body">
     <p class="eyebrow">Quiz · final score</p>
@@ -273,6 +276,7 @@ function endQuiz() {
   if (!state.quiz) return;
   state.quiz = null;
   state.selected = null;
+  setPlain(false);
   document.body.classList.remove("quizzing");
   $("quiz-toggle").setAttribute("aria-pressed", false);
   $("guess-mark").hidden = true;

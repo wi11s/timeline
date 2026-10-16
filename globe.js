@@ -108,6 +108,7 @@ function paintTexture(feats) {
     c.lineWidth = (clamp(1.7 - r.rank * 0.2, 0.6, 1.7) * 1.8) / k;
     c.stroke(r.geo);
   }
+  if (state.plain) return;
   c.strokeStyle = colors.line;
   c.lineWidth = 1.4 / k;
   for (const f of feats) if (!f.rough) c.stroke(f.geo);
