@@ -42,6 +42,7 @@ const state = {
   playing: false,
   speed: 1,
   story: null,          // the reel's event being told in the card
+  cardAt: -1e9,         // when the card last appeared or changed
   queue: [],            // events waiting for their turn
   ease: 1,              // playback slows while there's something to read
   stop: null,           // the guided stop in progress
@@ -471,7 +472,7 @@ function tick(now) {
   busy = stepView(dt) || busy;
   busy = pumpStories() || busy;
   if (state.transition && progress(state.transition) >= 1) state.transition = null;
-  busy ||= !!state.transition || (globe.on && globeBusy());
+  busy ||= !!state.transition || (globe.on && globeBusy()) || now - state.cardAt < TETHER_MS; // the card's line drawing in
   draw();
   if (busy) invalidate();
 }
@@ -1057,6 +1058,7 @@ const wasRead = (st) => shownFor(st) >= READ_MS / Math.sqrt(state.speed);
 function holding(rate) {
   const st = state.story;
   if (!st?.fromPlay || wasRead(st)) return false;
+  if (state.queue.length) return true; // another is already waiting its turn (the same year, say)
   const next = currentReel().order.find((e) => e.start > state.year);
   return !!next && lg(state.year) - lg(next.start) < 0.35 * rate * state.speed;
 }
@@ -1099,28 +1101,43 @@ function endStory() {
 }
 
 // the line from the card to its event's pin, drawn under the pins and the card:
-// an s-curve leaving the pin sideways (upwards on a phone, where the card is below)
-const PING_MS = 2200;
+// an s-curve leaving the pin sideways (upwards on a phone, where the card is below).
+// it meets the card where the card rests (not where its entrance animation has it), at
+// a point that doesn't move as the card's picture and text load in, and it draws itself
+// from the pin to the card as the card appears
+const PING_MS = 2200, TETHER_MS = 380;
 function drawTether() {
   const e = state.selected, card = $("card");
   if (!e || card.hidden) return;
   const at = screenAt(e.lon, e.lat, 0.12);
   if (!at) return;
-  const [x, y] = at, r = card.getBoundingClientRect(), phone = innerWidth < 600;
+  const [x, y] = at, phone = innerWidth < 600;
+  const r = { left: card.offsetLeft, top: card.offsetTop, right: card.offsetLeft + card.offsetWidth, bottom: card.offsetTop + card.offsetHeight };
   if (x > r.left - 12 && x < r.right + 12 && y > r.top - 12 && y < r.bottom + 12) return; // under the card
   const ax = phone ? clamp(x, r.left + 28, r.right - 28) : x < r.left ? r.left : r.right;
-  const ay = phone ? (y < r.top ? r.top : r.bottom) : clamp(y, r.top + 30, Math.min(r.bottom, r.top + 220) - 10);
+  const ay = phone ? (y < r.top ? r.top : r.bottom) : clamp(y, r.top + 30, r.top + 110);
+  const c1 = phone ? [x, (y + ay) / 2] : [(x + ax) / 2, y], c2 = phone ? [ax, (y + ay) / 2] : [(x + ax) / 2, ay];
+  const grow = ease(clamp((performance.now() - state.cardAt) / TETHER_MS, 0, 1));
+  let length = 0; // of the curve, for drawing part of it
+  for (let i = 1, px = x, py = y; i <= 16; i++) {
+    const t = i / 16, u = 1 - t;
+    const qx = u * u * u * x + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t * t * t * ax;
+    const qy = u * u * u * y + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t * t * t * ay;
+    length += Math.hypot(qx - px, qy - py);
+    px = qx; py = qy;
+  }
   const color = colors.kinds?.[e.kind] ?? colors.accent;
   ctx.save();
   ctx.strokeStyle = ctx.fillStyle = color;
   ctx.lineWidth = 1.6;
   ctx.globalAlpha = 0.8;
+  if (grow < 1) ctx.setLineDash([length * grow, length + 1]);
   ctx.beginPath();
   ctx.moveTo(x, y);
-  if (phone) ctx.bezierCurveTo(x, (y + ay) / 2, ax, (y + ay) / 2, ax, ay);
-  else ctx.bezierCurveTo((x + ax) / 2, y, (x + ax) / 2, ay, ax, ay);
+  ctx.bezierCurveTo(c1[0], c1[1], c2[0], c2[1], ax, ay);
   ctx.stroke();
-  ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
+  ctx.globalAlpha = clamp((grow - 0.8) / 0.2, 0, 1);
   ctx.beginPath();
   ctx.arc(ax, ay, 3.5, 0, Math.PI * 2);
   ctx.fill();
@@ -1537,6 +1554,7 @@ function fillCard({ meta, title, related = [], kind }) {
   card.querySelector(".related-wrap").hidden = !related.length;
   if (card.hidden || card.dataset.title !== title) {
     card.animate([{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }], { duration: 280, easing: "ease-out" });
+    state.cardAt = performance.now(); // its line draws in with it (drawTether)
   }
   card.dataset.title = title;
   card.hidden = false;

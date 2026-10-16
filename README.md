@@ -42,7 +42,7 @@ the fields are described under [events](#events) below. a few tips:
 
 ### add a story or a region
 
-focuses live in [`data/focuses.json`](data/focuses.json): a title, a one-line blurb, the years (`from`, `to`), where to look (`lon`, `lat`, and `zoom`, where 1 is the whole world), and optionally a `box` of `[west, south, east, north]` to limit the events to. `group` is `stories` or `regions`, `seconds` sets how long it plays at 1× (90 by default), and `kinds` (optional) limits it to some kinds of event, like `["art"]`. a focus picks its own reel of stories in advance from just its events (see stories below), so something is always happening, and its strongest picks become guided stops.
+focuses live in [`data/focuses.json`](data/focuses.json): a title, a one-line blurb, the years (`from`, `to`), where to look (`lon`, `lat`, and `zoom`, where 1 is the whole world), and optionally a `box` of `[west, south, east, north]` to limit the events to. `group` is `stories` or `regions`, `seconds` sets how long it plays at 1× (90 by default), and `kinds` (optional) limits it to some kinds of event, like `["art"]`. a focus picks its own reel of stories in advance from just its events (see stories below), so something is always happening, and its strongest picks become guided stops. a focus with few enough events to fit its time (about one per 2½ seconds), like science and invention, plays every one of them.
 
 ### fix the data at the source
 
@@ -52,7 +52,7 @@ most events come from [wikidata](https://www.wikidata.org), and the borders come
 
 the viewer is three files: `index.html`, `style.css` and `app.js`. see [how it works](#how-it-works) for a tour. ideas that would make a real difference:
 
-- **coverage:** curated events outside europe, and science and culture milestones (wikidata rarely gives these a location, so the pipeline misses them)
+- **coverage:** curated events outside europe, and culture milestones (wikidata rarely gives these a location, so the pipeline misses them). science and invention has a hand-picked set of about 50 in `events.json`, placed where the work was done or published; more are welcome
 - **borders after 2010:** the newest snapshot is 2010, so south sudan and others are missing
 - **accessibility:** keyboard navigation between pins, screen reader text for the map
 - **performance on low-end phones**

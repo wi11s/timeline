@@ -330,7 +330,7 @@ svg.kind.k-art { stroke: var(--k-art); }
   #card h2 { font-size: 20px; margin-bottom: 5px; }
   #card .desc { font-size: 15px; margin-bottom: 6px; -webkit-line-clamp: 4; line-clamp: 4; }
   /* a story playing: a strip, picture beside the words; tap it for the full card */
-  #card.compact:not([hidden]) { display: flex; gap: 11px; align-items: flex-start; padding: 10px; max-height: 128px; overflow: hidden; }
+  #card.compact:not([hidden]) { display: flex; gap: 11px; align-items: flex-start; padding: 10px; height: 128px; overflow: hidden; } /* a fixed height: its top (where the line meets it) stays put as it loads */
   #card.compact img { width: 72px; height: auto; min-height: 64px; align-self: stretch; flex: none; border-radius: 9px; } /* as tall as the words beside it */
   #card.compact .body { padding: 0; min-width: 0; }
   #card.compact .meta { font-size: 13px; }
