@@ -203,8 +203,10 @@ let fling = null;  // pan velocity after a drag, px/s
 
 function resize() {
   dpr = devicePixelRatio || 1;
-  canvas.width = innerWidth * dpr;
-  canvas.height = innerHeight * dpr;
+  // the canvases' pixels follow their box on screen, not innerWidth/innerHeight: with a
+  // phone's keyboard up those can disagree, and the map and globe would be drawn stretched
+  canvas.width = Math.round((canvas.clientWidth || innerWidth) * dpr);
+  canvas.height = Math.round((canvas.clientHeight || innerHeight) * dpr);
   const { cx, cy, w, h } = mapArea(), pad = 16;
   const fitW = (w - pad * 2) / (HALF_W * 2), fitH = (h - pad * 2) / (BOTTOM - TOP);
   // a phone held upright would show a thin strip of world: start zoomed in on the
@@ -1705,7 +1707,21 @@ addEventListener("keydown", (ev) => ev.key === "Escape" && closeCard());
   document.fonts.addEventListener("loadingdone", () => { layerDirty = true; placeEraTag(state.year); invalidate(); });
   readColors();
   buildTicks();
-  addEventListener("resize", resize);
+  // resized, rotated, or a phone's keyboard coming and going (which may not resize the
+  // window, but leaves the page scrolled): once a frame at most
+  let resizing = false;
+  const queueResize = () => {
+    if (resizing) return;
+    resizing = true;
+    requestAnimationFrame(() => {
+      resizing = false;
+      if ((scrollX || scrollY) && (!visualViewport || visualViewport.height >= innerHeight - 1)) scrollTo(0, 0);
+      resize();
+    });
+  };
+  addEventListener("resize", queueResize);
+  window.visualViewport?.addEventListener("resize", queueResize);
+  new ResizeObserver(queueResize).observe(canvas);
   dark.addEventListener("change", () => { readColors(); drawDensity(); viewChanged(); });
   resize();
   const fromHash = () => {

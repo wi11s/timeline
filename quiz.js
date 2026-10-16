@@ -6,7 +6,7 @@
 const QUIZ_ROUNDS = 10, QUIZ_MAX = 1000;
 const QUIZ_WEIGHT = 100;    // what an event needs to be asked about (the hand-picked ones always can)
 const QUIZ_HORIZON = 2150;  // closeness is measured in log-years before this (see points)
-const QUIZ_STRIP = 262;     // the panel's height on a phone, which the map makes room for (mapArea)
+const QUIZ_STRIP = 262;     // the panel's greatest height on a phone, which the map makes room for (mapArea)
 const BEST_KEY = "quiz-best";
 
 const quizPanel = $("quiz"), quizScreen = quizPanel.querySelector(".screen");
@@ -109,7 +109,11 @@ function ask(i) {
   fillHeader(r);
   showGuess(r.guess);
   const form = quizScreen.querySelector("form"), input = form.querySelector("input");
-  input.addEventListener("input", () => typed());
+  // while it shows the timeline's year, a tap selects it, so typing replaces it rather than adding to it
+  const pick = () => input.dataset.shown && setTimeout(() => input.select());
+  input.addEventListener("focus", pick);
+  input.addEventListener("click", pick);
+  input.addEventListener("input", () => { delete input.dataset.shown; typed(); });
   input.addEventListener("keydown", (ev) => {
     ev.stopPropagation(); // typing isn't play/pause or scrubbing
     if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
@@ -151,7 +155,10 @@ function typed() {
 function showGuess(y, force = false) {
   const input = quizScreen.querySelector(".guess input");
   if (!input) return;
-  if (force || document.activeElement !== input || !input.value) input.value = y; // not under their fingers
+  if (force || document.activeElement !== input || !input.value) { // not under their fingers
+    input.value = y;
+    input.dataset.shown = "1";
+  }
 }
 // called by applyYear (app.js) whenever the timeline moves
 function syncGuess(year) {

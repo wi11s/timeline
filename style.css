@@ -199,8 +199,8 @@ body.globe { background: var(--space); }
 #card .meta { margin: 0; color: var(--muted); font-size: 14px; font-style: italic; }
 #card .meta svg.kind { width: 15px; height: 15px; margin: 0 6px -2px 0; }
 #card .meta .kind-name { color: var(--kind); font-style: normal; font-size: 16.5px; font-weight: 600; font-variant-caps: all-small-caps; letter-spacing: .07em; }
-#card .meta .when { font-feature-settings: "onum"; }
-#card .meta .when::before { content: "·"; margin: 0 6px 0 4px; font-style: normal; }
+#card .meta .when { color: var(--ink); font-size: 16.5px; font-style: normal; font-weight: 500; font-feature-settings: "lnum"; } /* the date: as plain to read as the kind beside it */
+#card .meta .when::before { content: "·"; margin: 0 6px 0 4px; color: var(--muted); font-weight: 400; }
 #card .desc {
   margin: 0 0 10px; font-size: 16px; line-height: 1.45; hyphens: auto;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 7; line-clamp: 7; overflow: hidden;
@@ -431,13 +431,14 @@ svg.kind.k-music { stroke: var(--k-music); }
   #card.compact img { width: 72px; height: auto; min-height: 64px; align-self: stretch; flex: none; border-radius: 9px; } /* as tall as the words beside it */
   #card.compact .body { padding: 0; min-width: 0; }
   #card.compact .meta { font-size: 13px; }
-  #card.compact .meta .kind-name { font-size: 15px; }
+  #card.compact .meta .kind-name, #card.compact .meta .when { font-size: 15px; }
   #card.compact h2 { margin: 1px 30px 3px 0; font-size: 17.5px; line-height: 1.15; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
   #card.compact .desc { margin: 0; font-size: 14px; line-height: 1.3; -webkit-line-clamp: 2; line-clamp: 2; }
   #card.compact .wiki, #card.compact .related-wrap { display: none; }
   #card.compact #close { top: 6px; right: 6px; width: 26px; height: 26px; font-size: 18px; box-shadow: none; }
-  /* the quiz: a little taller than a story (QUIZ_STRIP in quiz.js), the picture beside the title */
-  #quiz { bottom: var(--stack); left: 10px; right: 10px; width: auto; height: 262px; max-height: none; }
+  /* the quiz: up to a little taller than a story (QUIZ_STRIP in quiz.js), the picture beside the title */
+  #quiz { bottom: var(--stack); left: 10px; right: 10px; width: auto; max-height: 262px; } /* as tall as it needs, up to the room the map leaves it */
+  #quiz .body > :last-child { margin-bottom: 0; }
   #quiz img { float: left; width: 72px; height: 72px; margin: 12px 12px 6px 12px; border-radius: 9px; }
   #quiz .body { padding: 11px 14px 13px; }
   #quiz .body > :is(.hint, .guess, .result) { clear: left; }
