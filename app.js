@@ -184,12 +184,14 @@ const dockSpace = () => (innerWidth < 600 ? 136 : 92); // the timeline dock alon
 
 // the map's part of the screen, so a story never covers the map it's about: above the
 // dock and, on a wide screen, left of the card's column; on a phone, between the top
-// buttons and the (compact) story card, which sits just above the dock there
+// buttons and the (compact) story card, which sits just above the dock there (or the
+// quiz, a little taller)
 const CARD_COLUMN = 377, CARD_STRIP = 128;
 function mapArea() {
   if (innerWidth < 600) {
     const dock = document.querySelector("footer").getBoundingClientRect().top || innerHeight - dockSpace();
-    const top = 58, h = Math.max(160, dock - 10 - CARD_STRIP - 8 - top);
+    const strip = state.quiz ? QUIZ_STRIP : CARD_STRIP;
+    const top = 58, h = Math.max(160, dock - 10 - strip - 8 - top);
     return { cx: innerWidth / 2, cy: top + h / 2, w: innerWidth, h };
   }
   const side = innerWidth >= 1000 ? CARD_COLUMN : 0, h = innerHeight - dockSpace();
@@ -215,6 +217,7 @@ function resize() {
   coastAt = null;
   density.bins = null;
   drawDensity();
+  if (eraShown) placeEraTag(state.year);
   viewChanged();
 }
 
@@ -453,6 +456,7 @@ function readColors() {
   colors.realms = Array.from({ length: REALMS }, (_, i) => css.getPropertyValue(`--realm-${i}`).trim());
   colors.space = css.getPropertyValue("--space").trim();
   colors.kinds = Object.fromEntries(Object.keys(KIND_ICONS).map((k) => [k, css.getPropertyValue(`--k-${k}`).trim()]));
+  colors.eras = ERAS.map((_, i) => css.getPropertyValue(`--era-${i}`).trim());
 
   layerDirty = true;
   if (typeof globeStale === "function") globeStale(true);
@@ -478,6 +482,7 @@ function tick(now) {
 }
 
 function visibleEvents() {
+  if (state.quiz?.asking) return []; // the pins would give the answer away (the quiz's own is state.selected)
   const now = lg(state.year);
   return state.events.filter((e) => e.start <= state.year && e.start >= MIN_YEAR && e.endLg - now <= LINGER && inFocus(e));
 }
@@ -918,6 +923,7 @@ const KIND_ICONS = {
   exploration: "M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1 .6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1M19.38 20A11.6 11.6 0 0 0 21 14l-9-4-9 4c0 2.9.94 5.34 2.81 7.76M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6M12 10v4M12 2v3", // ship
   disaster: "M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z", // flame
   art: "M13 6.5a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0M17 10.5a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0M8 7.5a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0M6 12.5a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z", // palette
+  music: "M9 18V5l12-2v13M3 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M15 16a3 3 0 1 0 6 0a3 3 0 1 0 -6 0", // music
 };
 const kindPaths = Object.fromEntries(Object.entries(KIND_ICONS).map(([k, d]) => [k, new Path2D(d)]));
 const kindSvg = (kind) => `<svg class="kind k-${kind}" viewBox="0 0 24 24" aria-hidden="true"><path d="${KIND_ICONS[kind] ?? ""}"/></svg>`;
@@ -939,7 +945,7 @@ function drawPins() {
     if (!noted.has(e) && state.pins.some((p) => Math.abs(p.x - x) < gap && Math.abs(p.y - y) < gap)) continue;
     const age = (e.endLg - lg(state.year)) / LINGER;
     const r = (e === state.hoverEvent ? 2 : 0) + size * (e.importance === 1 ? 11 : e.importance === 2 ? 10 : 9);
-    state.pins.push({ e, x, y, r, alpha: age > 0 ? 1 - age * 0.65 : 1 });
+    state.pins.push({ e, x, y, r, alpha: age > 0 && !noted.has(e) ? 1 - age * 0.65 : 1 });
   }
   ctx.lineCap = ctx.lineJoin = "round";
   for (const p of [...state.pins].reverse()) { // heaviest on top
@@ -1026,6 +1032,7 @@ const inFocus = (e) => {
 // fetched ahead, so stories appear on time. a card the reader opened themselves (or
 // touched) stays until they close it, and the reel lets it be
 function notify(prev, year) {
+  if (state.quiz) return; // the quiz moves the timeline to guess, and to answer
   if (state.story && state.story.e.start > year) closeCard();
   if (year <= prev || lg(prev) - lg(year) > 0.4) { state.queue = []; return; } // backwards, or a jump
   const reel = currentReel(), crossed = reel.order.filter((e) => e.start > prev && e.start <= year);
@@ -1107,7 +1114,7 @@ function endStory() {
 // from the pin to the card as the card appears
 const PING_MS = 2200, TETHER_MS = 380;
 function drawTether() {
-  const e = state.selected, card = $("card");
+  const e = state.selected, card = state.quiz ? $("quiz") : $("card");
   if (!e || card.hidden) return;
   const at = screenAt(e.lon, e.lat, 0.12);
   if (!at) return;
@@ -1157,6 +1164,20 @@ function drawTether() {
 
 // --- timeline & playback ---------------------------------------------------------------
 
+// the eras of world history, at their conventional dates (where one really ended and the
+// next began varies from place to place). each has a colour, --era-0 … in style.css: the
+// timeline's bars take their era's colour, and the era is named over the handle
+const ERAS = [
+  { from: MIN_YEAR, name: "Bronze Age" },
+  { from: -1200, name: "Iron Age" },
+  { from: -500, name: "Classical antiquity" },
+  { from: 500, name: "Post-classical era" },
+  { from: 1500, name: "Early modern era" },
+  { from: 1800, name: "Modern era" },
+  { from: 1945, name: "Contemporary era" },
+];
+const eraOf = (y) => ERAS.findLast((e) => y >= e.from) ?? ERAS[0];
+
 function buildTicks() {
   for (const y of [-3000, -2000, -1000, 1, 500, 1000, 1500, 2000]) {
     const s = document.createElement("span");
@@ -1170,7 +1191,7 @@ function buildTicks() {
 
 // along the track, how much happened when: a bar for every few pixels, as tall as the
 // (log of the) weight of the events in it, and only what's in focus during a focus.
-// the stretch already played is in the accent colour
+// each bar is in its era's colour, strong where it's been played
 const density = { bins: null };
 function drawDensity() {
   const cv = $("density"), w = cv.clientWidth, h = cv.clientHeight, r = devicePixelRatio || 1;
@@ -1190,23 +1211,38 @@ function drawDensity() {
   c.clearRect(0, 0, w, h);
   for (let i = 0; i < bins.length; i++) {
     if (!bins[i]) continue;
-    c.fillStyle = i < played ? colors.accent : colors.ink;
-    c.globalAlpha = i < played ? 0.55 : 0.2;
+    c.fillStyle = colors.eras[ERAS.indexOf(eraOf(toYear((i + 0.5) / bins.length)))] || colors.accent;
+    c.globalAlpha = i < played ? 0.85 : 0.3;
     const bh = Math.max(1.5, bins[i] * h);
     c.fillRect(i * bw, h - bh, bw - 1, bh);
   }
   c.globalAlpha = 1;
 }
 
-// hovering the track shows the year under the pointer
+// hovering the track marks the spot under the pointer
 $("track").addEventListener("pointermove", (ev) => {
   if (ev.pointerType !== "mouse") return;
-  const p = trackPos(ev), peek = $("peek");
-  peek.style.left = `${p * 100}%`;
-  peek.dataset.year = fmt(roundYear(toYear(p)));
+  const peek = $("peek");
+  peek.style.left = `${trackPos(ev) * 100}%`;
   peek.hidden = false;
 });
 $("track").addEventListener("pointerleave", () => ($("peek").hidden = true));
+
+// the era's name rides over the handle, kept inside the track (on a phone it sits in the
+// row above instead, beside the year); it pulses on entering a new era
+let eraShown = null;
+function placeEraTag(y) {
+  const tag = $("era-tag"), era = eraOf(y), w = $("track").clientWidth;
+  if (era !== eraShown) {
+    tag.querySelector("span").textContent = era.name;
+    tag.style.setProperty("--era", `var(--era-${ERAS.indexOf(era)})`);
+    if (eraShown) tag.animate([{ scale: 1.12 }, { scale: 1 }], { duration: 450, easing: "ease-out" });
+    eraShown = era;
+  }
+  if (innerWidth < 600) return tag.style.removeProperty("left");
+  const half = tag.offsetWidth / 2;
+  tag.style.left = `${clamp(state.pos * w, half, w - half)}px`;
+}
 
 // the year in the dock: big numerals, the era small
 function showYear(y) {
@@ -1220,6 +1256,8 @@ function applyYear(year) {
   const prev = state.year;
   state.year = year;
   $("handle").style.left = `${state.pos * 100}%`;
+  placeEraTag(year);
+  if (state.quiz) syncGuess(year); // quiz.js: while asking, the timeline is the guess
   drawDensity();
   invalidate();
   if (year === prev && state.wanted !== null) return;
@@ -1252,6 +1290,7 @@ function setYear(y) {
 }
 
 function setPlaying(on) {
+  if (state.quiz) on = false;
   if (on && state.focus && state.year >= state.focus.to) setYear(state.focus.from); // replay the focus
   else if (on && state.pos >= 1) setYear(MIN_YEAR); // replay from the start
   if (on !== state.playing) {
@@ -1584,6 +1623,7 @@ function fillSummary(s, url) {
 
 // an event's card: told by the reel (story), or opened by the reader, which ends any story
 async function openCard(e, story = false) {
+  if (state.quiz) return; // it would tell the date
   if (!story) endStory();
   $("card").classList.toggle("compact", story);
   const when = e.end ? `${fmt(e.start)} – ${fmt(e.end)}` : fmt(e.start);
@@ -1598,6 +1638,7 @@ async function openCard(e, story = false) {
 // a territory: what it was, who it answered to, and the biggest events inside it
 // while these borders stood
 async function openRealm(f) {
+  if (state.quiz) return;
   const i = state.snapshots.indexOf(state.wanted), from = state.wanted, until = state.snapshots[i + 1] ?? MAX_YEAR;
   wctx.setTransform(1, 0, 0, 1, 0, 0); // the paths are in projected units
   const inside = state.events
@@ -1619,7 +1660,8 @@ async function openRealm(f) {
 function closeCard() {
   endStory();
   $("card").hidden = true;
-  state.selected = state.selectedRealm = null;
+  state.selectedRealm = null;
+  if (!state.quiz) state.selected = null; // the quiz's event stays pinned
   invalidate();
 }
 $("close").onclick = closeCard;
@@ -1644,7 +1686,7 @@ addEventListener("keydown", (ev) => ev.key === "Escape" && closeCard());
   loadPhysical().catch(() => {}); // the map works without it
   const fonts = ["400", "500", "italic 400"].map((w) => document.fonts.load(`${w} 16px "EB Garamond"`));
   await Promise.race([Promise.all(fonts), new Promise((r) => setTimeout(r, 1500))]).catch(() => {});
-  document.fonts.addEventListener("loadingdone", () => { layerDirty = true; invalidate(); });
+  document.fonts.addEventListener("loadingdone", () => { layerDirty = true; placeEraTag(state.year); invalidate(); });
   readColors();
   buildTicks();
   addEventListener("resize", resize);

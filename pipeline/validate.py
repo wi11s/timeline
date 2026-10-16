@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-KINDS = {"war", "battle", "political", "culture", "science", "exploration", "disaster", "art"}
+KINDS = {"war", "battle", "political", "culture", "science", "exploration", "disaster", "art", "music"}
 REQUIRED = {"id": str, "title": str, "kind": str, "start": int, "lat": (int, float), "lon": (int, float), "importance": int}
 OPTIONAL = {"end": int, "approx": bool, "wiki": str, "qid": str, "sitelinks": int, "finale": bool}
 

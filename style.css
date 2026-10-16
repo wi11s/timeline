@@ -9,7 +9,9 @@
   --realm-5: #d6c4d4; --realm-6: #cfbd9a; --realm-7: #e7c0a3; --realm-8: #bacbb0; --realm-9: #d9c8a6;
   --serif: "EB Garamond", "Iowan Old Style", Georgia, serif;
   /* a colour for each kind of event (pins, cards, the key) */
-  --k-war: #9b2a2a; --k-battle: #c2531c; --k-political: #1f4e9c; --k-culture: #6d4a9e; --k-science: #16756f; --k-exploration: #2f7d3b; --k-disaster: #a77408; --k-art: #b02d6c;
+  --k-war: #9b2a2a; --k-battle: #c2531c; --k-political: #1f4e9c; --k-culture: #6d4a9e; --k-science: #16756f; --k-exploration: #2f7d3b; --k-disaster: #a77408; --k-art: #b02d6c; --k-music: #8a5523;
+  /* the eras along the timeline: bronze, iron, terracotta, olive, sea blue, plum, rose */
+  --era-0: #b07d34; --era-1: #6f7c88; --era-2: #b5553a; --era-3: #5f7d3a; --era-4: #2e6e93; --era-5: #7b4f8e; --era-6: #b8436a;
   /* the floating controls */
   --edge: rgba(74, 58, 38, .14); --hover: rgba(74, 58, 38, .07); --on-accent: #fbf8f1;
   --lift: 0 1px 2px rgba(60, 40, 15, .07), 0 6px 18px rgba(60, 40, 15, .1);
@@ -21,9 +23,10 @@
     --line: rgba(236, 226, 205, .2); --land: #2e2a22; --accent: #86abe6;
     --coast: rgba(150, 186, 220, .3); --river: rgba(150, 186, 220, .5); --halo: rgba(27, 25, 21, .6);
     --panel: rgba(31, 28, 23, .97); --space: #12110f; --badge: #172025;
-    --k-war: #e07a72; --k-battle: #f0995e; --k-political: #86abe6; --k-culture: #b9a0e6; --k-science: #6cc9bf; --k-exploration: #86c98f; --k-disaster: #e6bd5c; --k-art: #ee86b4;
+    --k-war: #e07a72; --k-battle: #f0995e; --k-political: #86abe6; --k-culture: #b9a0e6; --k-science: #6cc9bf; --k-exploration: #86c98f; --k-disaster: #e6bd5c; --k-art: #ee86b4; --k-music: #d9a26b;
     --realm-0: #5b4a30; --realm-1: #59413b; --realm-2: #46503a; --realm-3: #3b4d4c; --realm-4: #57522f;
     --realm-5: #4c4150; --realm-6: #4e4431; --realm-7: #5c4433; --realm-8: #3d4d3d; --realm-9: #4f4637;
+    --era-0: #d9a55a; --era-1: #a3afba; --era-2: #e08466; --era-3: #9cb86c; --era-4: #6ba9cf; --era-5: #b590c8; --era-6: #e28aa8;
     --edge: rgba(236, 226, 205, .12); --hover: rgba(236, 226, 205, .07); --on-accent: #121a22;
     --lift: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 18px rgba(0, 0, 0, .3);
     --float: 0 2px 6px rgba(0, 0, 0, .3), 0 16px 40px rgba(0, 0, 0, .45);
@@ -58,7 +61,7 @@ body::after {
 @media (prefers-color-scheme: dark) {
   body::after { opacity: .35; }
 }
-#hover, #top, #zoom, #card, #explore, #focus-chip, footer { z-index: 2; }
+#hover, #top, #zoom, #card, #quiz, #explore, #focus-chip, footer { z-index: 2; }
 #results { z-index: 3; }
 
 /* --- buttons: grouped on soft pills ------------------------------------------------ */
@@ -214,6 +217,79 @@ body.globe { background: var(--space); }
 }
 #close:hover { color: var(--ink); }
 
+/* the quiz (quiz.js), where the card goes. while it's on, the timeline is for guessing:
+   no playback, and no search or explore, which would give the answers away */
+body.quizzing #search, body.quizzing #explore-toggle { display: none; }
+body.quizzing #play { opacity: .35; pointer-events: none; }
+#quiz {
+  position: fixed; top: 68px; right: 16px; width: min(345px, calc(100vw - 32px));
+  max-height: calc(100vh - 180px); max-height: calc(100dvh - 180px); overflow: auto; overscroll-behavior: contain;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 16px; box-shadow: var(--float);
+}
+#quiz[hidden] { display: none; }
+#quiz .close {
+  position: absolute; z-index: 1; top: 10px; right: 10px; width: 30px; height: 30px; display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: 50%; background: var(--panel); color: var(--muted); cursor: pointer; box-shadow: var(--lift);
+}
+#quiz .close:hover { color: var(--ink); }
+#quiz .close svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+#quiz img { display: block; width: 100%; height: 170px; object-fit: cover; background: var(--line); filter: sepia(.15); }
+#quiz img[hidden] { display: none; }
+#quiz .body { padding: 14px 18px 16px; }
+#quiz h2 { margin: 2px 26px 8px 0; font-size: 23px; font-weight: 500; line-height: 1.15; }
+#quiz p { margin: 0 0 10px; font-size: 16px; line-height: 1.45; }
+#quiz .eyebrow, #quiz .progress { margin: 0 34px 4px 0; color: var(--muted); font-size: 12.5px; letter-spacing: .13em; text-transform: uppercase; }
+#quiz .progress { display: flex; justify-content: space-between; gap: 8px; font-feature-settings: "lnum"; }
+#quiz .meta { margin: 0; color: var(--muted); font-size: 14px; }
+#quiz .meta svg.kind { width: 15px; height: 15px; margin: 0 6px -2px 0; }
+#quiz .meta .kind-name { color: var(--kind); font-size: 16.5px; font-weight: 600; font-variant-caps: all-small-caps; letter-spacing: .07em; }
+#quiz .hint { margin-bottom: 8px; color: var(--muted); font-style: italic; }
+#quiz .primary {
+  height: 42px; padding: 0 18px; flex: none; border: 0; border-radius: 999px; background: var(--accent); color: var(--on-accent);
+  font: 500 16px/1 var(--serif); cursor: pointer; box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+#quiz .primary:hover { filter: brightness(1.08); }
+#quiz .primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#quiz .body > .primary { display: block; width: 100%; margin-top: 4px; }
+#quiz .guess { display: flex; gap: 8px; }
+#quiz .guess input {
+  width: 0; flex: 1; min-width: 64px; height: 42px; padding: 0 12px; border: 1px solid var(--edge); border-radius: 10px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent); color: var(--ink); outline: none;
+  font: 22px/1 var(--serif); font-feature-settings: "lnum", "tnum"; -webkit-user-select: text; user-select: text;
+}
+#quiz .guess input:focus { border-color: color-mix(in srgb, var(--accent) 60%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+#quiz .tip { margin: 7px 0 0; color: var(--muted); font-size: 14px; font-style: italic; }
+#quiz .result { margin: 6px 0 12px; padding: 10px 12px 11px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 8%, transparent); }
+#quiz .result p { margin: 0; font-size: 15.5px; }
+#quiz .points { display: flex; align-items: center; gap: 9px; }
+#quiz .points b { color: var(--accent); font-size: 27px; font-weight: 500; font-feature-settings: "lnum"; }
+#quiz .points span { color: var(--muted); font-style: italic; }
+#quiz .points .primary { margin-left: auto; height: 36px; padding: 0 16px; }
+#quiz .meter { height: 5px; margin: 6px 0 9px; border-radius: 3px; background: var(--line); overflow: hidden; }
+#quiz .meter i { display: block; height: 100%; border-radius: 3px; background: var(--accent); animation: quiz-meter .8s ease-out; }
+@keyframes quiz-meter { from { width: 0; } }
+#quiz .desc { margin-bottom: 8px; hyphens: auto; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; line-clamp: 6; overflow: hidden; }
+#quiz .desc:empty { display: none; }
+#quiz .wiki { color: var(--accent); text-decoration: none; font-size: 15px; font-style: italic; }
+#quiz .wiki:hover { text-decoration: underline; }
+#quiz .best { color: var(--muted); font-style: italic; }
+#quiz .best b { color: var(--ink); font-style: normal; font-weight: 500; font-feature-settings: "lnum"; }
+#quiz .final { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+#quiz .score { margin: 0; font-size: 40px; font-feature-settings: "lnum"; }
+#quiz .score small { color: var(--muted); font-size: 19px; }
+#quiz .rounds { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+#quiz .rounds li + li { border-top: 1px solid var(--line); }
+#quiz .rounds button {
+  display: flex; gap: 10px; align-items: flex-start; width: 100%; padding: 7px 0; border: 0; background: none;
+  text-align: left; color: var(--ink); font: 15px/1.25 var(--serif); cursor: pointer;
+}
+#quiz .rounds button:hover b { color: var(--accent); }
+#quiz .rounds svg.kind { flex: none; width: 15px; height: 15px; margin: 2px 0 0; }
+#quiz .rounds span { flex: 1; min-width: 0; }
+#quiz .rounds b { display: block; font-weight: 400; }
+#quiz .rounds small { display: block; color: var(--muted); font-size: 13px; font-style: italic; font-feature-settings: "onum"; }
+#quiz .rounds em { color: var(--accent); font-style: normal; font-weight: 500; font-feature-settings: "lnum", "tnum"; }
+
 /* --- the dock: play, the year, the timeline, speed ------------------------------------ */
 footer {
   position: fixed; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right));
@@ -239,7 +315,8 @@ footer {
 }
 #year small { margin-left: 5px; color: var(--muted); font-size: 19px; font-variant-caps: all-small-caps; letter-spacing: .06em; }
 
-/* the track: a bar of how much happened when, played part in blue; years under it */
+/* the track: a bar of how much happened when, coloured by era (strong where it's been
+   played), the era named over the handle; years under it */
 #track { position: relative; flex: 1; align-self: stretch; min-height: 48px; cursor: pointer; outline: none; touch-action: none; }
 #track::before { content: ""; position: absolute; left: 0; right: 0; top: 30px; height: 1px; background: var(--line); }
 #density { position: absolute; left: 0; top: 4px; width: 100%; height: 26px; pointer-events: none; }
@@ -258,11 +335,20 @@ footer {
 #track:focus-visible #handle::after { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent); }
 #peek { position: absolute; top: 0; height: 31px; width: 1px; background: color-mix(in srgb, var(--ink) 40%, transparent); pointer-events: none; }
 #peek[hidden] { display: none; }
-#peek::after {
-  content: attr(data-year); position: absolute; bottom: calc(100% + 18px); left: 50%; transform: translateX(-50%);
-  padding: 4px 9px 5px; border-radius: 8px; background: var(--ink); color: var(--badge);
-  font: 14px/1 var(--serif); white-space: nowrap; box-shadow: var(--lift);
+#era-tag {
+  position: absolute; bottom: calc(100% + 4px); left: 0; transform: translateX(-50%); pointer-events: none;
+  display: flex; align-items: center; gap: 6px; padding: 3px 9px 4px 8px; white-space: nowrap;
+  background: var(--panel); border: 1px solid color-mix(in srgb, var(--era) 45%, var(--edge)); border-radius: 999px;
+  font: italic 13.5px/1.1 var(--serif); color: var(--ink); box-shadow: var(--lift);
 }
+/* the guess, left on the timeline while the answer shows */
+#guess-mark { position: absolute; top: 0; height: 31px; width: 0; border-left: 2px dotted color-mix(in srgb, var(--ink) 55%, transparent); margin-left: -1px; pointer-events: none; }
+#guess-mark[hidden] { display: none; }
+#guess-mark::after {
+  content: ""; position: absolute; left: -1px; top: 30px; width: 11px; height: 11px; transform: translate(-50%, -50%);
+  border-radius: 50%; background: var(--badge); border: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
+}
+#era-tag i { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--era); }
 
 #options { display: flex; gap: 6px; }
 #options button {
@@ -292,6 +378,7 @@ svg.kind.k-science { stroke: var(--k-science); }
 svg.kind.k-exploration { stroke: var(--k-exploration); }
 svg.kind.k-disaster { stroke: var(--k-disaster); }
 svg.kind.k-art { stroke: var(--k-art); }
+svg.kind.k-music { stroke: var(--k-music); }
 
 /* --- phones --------------------------------------------------------------------------- */
 @media (max-width: 600px) {
@@ -319,6 +406,7 @@ svg.kind.k-art { stroke: var(--k-art); }
   #options { margin-left: auto; }
   #options button { height: 38px; }
   #track { order: 1; flex-basis: 100%; min-height: 52px; } /* last, full width: a comfortable thumb target */
+  #era-tag { left: auto; right: 60px; bottom: calc(100% + 17px); transform: none; font-size: 12.5px; box-shadow: none; } /* in the row above, by the speed button */
   #ticks .minor { display: none; }
 
   #card {
@@ -339,6 +427,16 @@ svg.kind.k-art { stroke: var(--k-art); }
   #card.compact .desc { margin: 0; font-size: 14px; line-height: 1.3; -webkit-line-clamp: 2; line-clamp: 2; }
   #card.compact .wiki, #card.compact .related-wrap { display: none; }
   #card.compact #close { top: 6px; right: 6px; width: 26px; height: 26px; font-size: 18px; box-shadow: none; }
+  /* the quiz: a little taller than a story (QUIZ_STRIP in quiz.js), the picture beside the title */
+  #quiz { top: auto; bottom: calc(max(10px, env(safe-area-inset-bottom)) + 128px); left: 10px; right: 10px; width: auto; height: 262px; max-height: none; }
+  #quiz img { float: left; width: 72px; height: 72px; margin: 12px 12px 6px 12px; border-radius: 9px; }
+  #quiz .body { padding: 11px 14px 13px; }
+  #quiz .body > :is(.hint, .guess, .result) { clear: left; }
+  #quiz h2 { font-size: 20px; margin-bottom: 6px; }
+  #quiz p { font-size: 15px; }
+  #quiz .close { top: 8px; right: 8px; width: 28px; height: 28px; box-shadow: none; }
+  #quiz .desc { -webkit-line-clamp: 4; line-clamp: 4; }
+  #quiz .score { font-size: 34px; }
   #explore { top: auto; bottom: calc(max(10px, env(safe-area-inset-bottom)) + 128px); left: 10px; right: 10px; width: auto; max-height: 60vh; max-height: 60dvh; }
   #focus-chip { left: 10px; bottom: calc(max(10px, env(safe-area-inset-bottom)) + 128px); }
 }

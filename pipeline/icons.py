@@ -29,6 +29,7 @@ KINDS = {
     "exploration": "ship",
     "disaster": "flame",
     "art": "palette",
+    "music": "music",
 }
 
 
