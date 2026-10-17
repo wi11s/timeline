@@ -4,6 +4,7 @@
 // the best score is kept in this browser (localStorage)
 
 const QUIZ_ROUNDS = 10, QUIZ_MAX = 1000;
+const QUIZ_UNTIL = 2018;    // nothing asked of later years
 const QUIZ_STRIP = 262;     // the panel's greatest height on a phone, which the map makes room for (mapArea)
 const BEST_KEY = "quiz-best";
 
@@ -30,7 +31,7 @@ function pickRounds(list) {
     if (!e) return [];
     title ??= e.title;
     const began = { e, level, title, year: e.start }, ended = { e, level, title, year: e.end, end: true };
-    return ask === "both" ? [began, ended] : ask === "end" ? [ended] : [began];
+    return (ask === "both" ? [began, ended] : ask === "end" ? [ended] : [began]).filter((r) => r.year <= QUIZ_UNTIL);
   });
   for (let i = pool.length - 1; i > 0; i--) { // shuffle
     const j = Math.floor(Math.random() * (i + 1));
@@ -51,9 +52,9 @@ function pickRounds(list) {
 // how close, on the timeline's own scale (lg, in app.js): the more recent the event, the
 // nearer you need to be, so a year or two off costs about as much for the iphone as a
 // century for the pyramids. and the older the date, the wider the margin on top, growing
-// smoothly towards twice as wide: few people know the middle ages to the decade
+// smoothly towards half as wide again: few people know the middle ages to the decade
 const points = (guess, year) => {
-  const age = PRESENT - year, margin = 0.15 * (1 + age / (age + 600));
+  const age = PRESENT - year, margin = 0.15 * (1 + 0.5 * age / (age + 600));
   return Math.round(QUIZ_MAX * Math.exp(-Math.abs(lg(guess) - lg(year)) / margin));
 };
 const verdict = (p) => (p >= 950 ? "Spot on" : p >= 750 ? "Very close" : p >= 450 ? "Close" : p >= 150 ? "Not far" : "Way off");
