@@ -398,6 +398,8 @@ svg.kind.k-music { stroke: var(--k-music); }
   #top { right: max(12px, env(safe-area-inset-right)); top: max(12px, env(safe-area-inset-top)); gap: 8px; }
   .bar > button, .bar > a { height: 38px; padding: 0 12px; }
   #top .bar span { display: none; } /* icons only */
+  #top .bar #quiz-toggle span { display: inline; } /* but the quiz, which an icon alone doesn't explain */
+  #quiz-toggle { color: var(--accent); }
   #hover { display: none; } /* hover names don't exist on touch */
   /* search folds to its icon, and opens across the top bar while typing */
   #search { height: 40px; padding: 0 11px; gap: 0; }

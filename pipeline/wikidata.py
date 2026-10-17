@@ -92,6 +92,27 @@ CATEGORIES = [
 # when a park was declared or a dig began, not when the place was built
 UNTIL = {"cultures": 1500, "sites": 1500}
 
+# where wikidata is wrong, the corrected fields, each checked against a source. better still,
+# fix wikidata itself (then the entry here can go)
+FIXES = {
+    # history.com, "Battle of the Alamo": February 23 – March 6, 1836 (wikidata: 2001)
+    "Q235344": {"start": 1836},
+    # livius.org, "Cyrus Cylinder": 539 BCE (wikidata's year is missing its era: 539 ce)
+    "Q405008": {"start": -539},
+    # getty research institute, mexican photography chronology: hidalgo's grito de dolores,
+    # 16 september 1810; independence, 24 august 1821 (wikidata: 1800, and a place in montana)
+    "Q68750": {"start": 1810, "lat": 21.16, "lon": -100.93},
+    # imperial war museums, "Eastern Front": june 1941 to the battle of berlin, 1945 (wikidata: until 1955)
+    "Q189266": {"end": 1945},
+    # world history encyclopedia, "Angkor Wat": built under suryavarman ii, r. 1113–1150, the
+    # exact years unknown (wikidata: 802, when the khmer empire was founded)
+    "Q43473": {"start": 1113, "approx": True},
+    # britannica, "Christ the Redeemer": completed in 1931, dedicated 12 october 1931 (wikidata: 1920)
+    "Q79961": {"start": 1931},
+    # the label had been vandalised ("Driving car"); the article is the battle of samarra, 363
+    "Q1231697": {"title": "Battle of Samarra"},
+}
+
 # everything over the minimum, plus older events over the lowest era threshold, plus
 # events in the thinly covered continents (before their REGIONS dates) over the lowest
 # threshold of all
@@ -265,6 +286,8 @@ def main():
         new = [e for e in found if e["id"] not in events]  # first category wins
         events.update((e["id"], e) for e in new)
         print(f"{name:>14}  {len(new):>5}")
+    for qid, fix in FIXES.items():
+        events.get(qid.lower(), {}).update(fix)
     out = sorted(events.values(), key=lambda e: (e["start"], -e["sitelinks"]))
     OUT.write_text("[\n" + ",\n".join(json.dumps(e, ensure_ascii=False) for e in out) + "\n]\n")
     print(f"{'total':>14}  {len(out):>5}  -> {OUT.relative_to(ROOT)}")

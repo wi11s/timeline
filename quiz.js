@@ -4,56 +4,45 @@
 // the best score is kept in this browser (localStorage)
 
 const QUIZ_ROUNDS = 10, QUIZ_MAX = 1000;
-const QUIZ_WEIGHT = 80;     // what an event needs to be asked about (the hand-picked highlights always can)
-const QUIZ_LATEST = 2018;   // nothing more recent: too fresh to feel like history, and scored hardest
 const QUIZ_STRIP = 262;     // the panel's greatest height on a phone, which the map makes room for (mapArea)
-const QUIZ_ENDS = 100;      // what an event that lasted needs for its end to be asked about too
 const BEST_KEY = "quiz-best";
 
 const quizPanel = $("quiz"), quizScreen = quizPanel.querySelector(".screen");
 const thousands = (n) => n.toLocaleString("en");
 
-// a title that names a year ("Revolutions of 1848") or any long number gives it away
-const givesAway = (e, year) => /\d{3,}/.test(e.title) || new RegExp(`\\b${Math.abs(year)}\\b`).test(e.title);
+// the questions, picked by hand in data/quiz.json: an event, how well known (level 1, 2 or 3),
+// whether to ask when it began (the default), when it ended, or both, and a title of its own
+// where the event's isn't clear enough. loaded when the quiz first opens
+let quizList = null;
+const loadQuizList = () => (quizList ??= fetch("data/quiz.json").then((r) => r.json())
+  .catch((err) => { quizList = null; throw err; })); // tried again next time
 
-// things that lasted, though only their start is known ("Hallstatt culture"): their year is when they began
-const lasted = (e) => e.end || /\b(culture|civili[sz]ation|period|age|revolution|renaissance|reformation|movement)$/i.test(e.title);
+// things that lasted, though only their start is known ("Russian Revolution"): their year is when they began
+const lasted = (e) => e.end || /\b(culture|civili[sz]ation|period|age|revolution|renaissance|reformation|movement|war)$/i.test(e.title);
 
-// a title shared with other events ("Siege of Jerusalem") is only fair to ask about when one
-// of them is far better known (thermopylae in 480 BCE): the heaviest two of each title
-function namesakes() {
-  const tops = new Map();
-  for (const e of state.events) { // heaviest first (mergeEvents)
-    const t = tops.get(e.title) ?? [];
-    if (t.length < 2) tops.set(e.title, [...t, e]);
+// ten of them, mixed: no more than three of a kind, or of an era, and never both ends of one
+// event. each round's level is drawn by chance, the best known likelier early on: 60% level 1,
+// 35% level 2 and 5% level 3 in the first round, shifting evenly to 20%, 40% and 40% in the last
+function pickRounds(list) {
+  const events = new Map(state.events.map((e) => [e.id, e]));
+  const pool = list.flatMap(({ id, level, ask = "start", title }) => {
+    const e = events.get(id);
+    if (!e) return [];
+    title ??= e.title;
+    const began = { e, level, title, year: e.start }, ended = { e, level, title, year: e.end, end: true };
+    return ask === "both" ? [began, ended] : ask === "end" ? [ended] : [began];
+  });
+  for (let i = pool.length - 1; i > 0; i--) { // shuffle
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  return (e) => { const [a, b] = tops.get(e.title); return !b || (a === e && e.weight >= 2 * b.weight); };
-}
-
-// what to ask about an event: always one exact year. one that lasted is asked when it
-// began, and the best known also when they ended
-function questions(e) {
-  const began = { e, year: e.start };
-  return e.end && e.weight >= QUIZ_ENDS && e.end - e.start >= 2 ? [began, { e, year: e.end, end: true }] : [began];
-}
-
-// well-known events with an exact year, mixed: no more than three of a kind, or of an era,
-// and never both ends of one event. the first rounds lean to the best known, and the
-// leaning fades round by round, until the last is as likely to be any of them
-function pickRounds() {
-  const unmistakable = namesakes();
-  const pool = state.events.filter((e) => e.start >= MIN_YEAR && !e.approx && e.wiki &&
-    (e.weight >= QUIZ_WEIGHT || e.curated && e.importance < 3) &&
-    !e.title.endsWith(" founded") && unmistakable(e))
-    .flatMap(questions).filter((r) => r.year <= QUIZ_LATEST && !givesAway(r.e, r.year)); // heaviest first (mergeEvents)
   const picks = [];
   const fresh = (r) => !picks.some((p) => p.e === r.e);
   const room = (r) => picks.filter((p) => p.e.kind === r.e.kind).length < 3 && picks.filter((p) => eraOf(p.year) === eraOf(r.year)).length < 3;
   for (let i = 0; i < QUIZ_ROUNDS; i++) {
-    const lean = 2 - i / (QUIZ_ROUNDS - 1); // how far toward the top of the pool: 2, about the top quarter, down to 1, anywhere
-    const at = Math.floor(Math.random() ** lean * pool.length);
-    const next = [...pool.slice(at), ...pool.slice(0, at)]; // from there on down
-    const r = next.find((r) => fresh(r) && room(r)) ?? next.find(fresh);
+    const t = i / (QUIZ_ROUNDS - 1), u = Math.random();
+    const level = u < 0.6 - 0.4 * t ? 1 : u < 0.95 - 0.35 * t ? 2 : 3;
+    const r = pool.find((r) => r.level === level && fresh(r) && room(r)) ?? pool.find((r) => fresh(r) && room(r)) ?? pool.find(fresh);
     if (r) picks.push(r);
   }
   return picks;
@@ -61,8 +50,12 @@ function pickRounds() {
 
 // how close, on the timeline's own scale (lg, in app.js): the more recent the event, the
 // nearer you need to be, so a year or two off costs about as much for the iphone as a
-// century for the pyramids
-const points = (guess, year) => Math.round(QUIZ_MAX * Math.exp(-Math.abs(lg(guess) - lg(year)) / 0.15));
+// century for the pyramids. and the older the date, the wider the margin on top, growing
+// smoothly towards twice as wide: few people know the middle ages to the decade
+const points = (guess, year) => {
+  const age = PRESENT - year, margin = 0.15 * (1 + age / (age + 600));
+  return Math.round(QUIZ_MAX * Math.exp(-Math.abs(lg(guess) - lg(year)) / margin));
+};
 const verdict = (p) => (p >= 950 ? "Spot on" : p >= 750 ? "Very close" : p >= 450 ? "Close" : p >= 150 ? "Not far" : "Way off");
 
 function readBest() {
@@ -94,8 +87,10 @@ function showIntro() {
   focusAction();
 }
 
-function start() {
-  state.quiz.rounds = pickRounds();
+async function start() {
+  const list = await loadQuizList();
+  if (!state.quiz) return; // closed while it loaded
+  state.quiz.rounds = pickRounds(list);
   for (const { e } of state.quiz.rounds) summary(e.wiki); // the answers' summaries and pictures, ahead
   ask(0);
 }
@@ -110,7 +105,7 @@ function header(r, i, picture = false) {
     <h2></h2>`;
 }
 function fillHeader(r) {
-  quizScreen.querySelector("h2").textContent = r.e.title;
+  quizScreen.querySelector("h2").textContent = r.title;
   quizPanel.style.setProperty("--kind", `var(--k-${r.e.kind})`);
   const img = quizScreen.querySelector("img");
   if (!img) return;
@@ -262,7 +257,7 @@ function finish() {
   quizScreen.querySelector(".rounds").replaceChildren(...q.rounds.map((r) => {
     const li = document.createElement("li"), b = document.createElement("button");
     b.innerHTML = `${kindSvg(r.e.kind)}<span><b></b><small></small></span><em>+${thousands(r.points)}</em>`;
-    b.querySelector("b").textContent = r.e.title;
+    b.querySelector("b").textContent = r.title;
     b.querySelector("small").textContent = `${r.end ? "ended " : ""}${fmt(r.year)} · you said ${fmt(r.guess)}`;
     b.title = "show it on the map";
     b.onclick = () => { endQuiz(); goToEvent(r.e); };
@@ -300,6 +295,7 @@ function openQuiz() {
   quizPanel.animate([{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }], { duration: 280, easing: "ease-out" });
   resize(); // a phone makes room for the panel
   showIntro();
+  loadQuizList().catch(() => {}); // ahead of start
 }
 
 function endQuiz() {
