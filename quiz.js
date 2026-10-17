@@ -4,15 +4,14 @@
 // the best score is kept in this browser (localStorage)
 
 const QUIZ_ROUNDS = 10, QUIZ_MAX = 1000;
-const QUIZ_WEIGHT = 30;     // what an event needs to be asked about (the hand-picked ones always can)
+const QUIZ_WEIGHT = 80;     // what an event needs to be asked about (the hand-picked highlights always can)
+const QUIZ_LATEST = 2018;   // nothing more recent: too fresh to feel like history, and scored hardest
 const QUIZ_STRIP = 262;     // the panel's greatest height on a phone, which the map makes room for (mapArea)
 const QUIZ_ENDS = 100;      // what an event that lasted needs for its end to be asked about too
 const BEST_KEY = "quiz-best";
 
 const quizPanel = $("quiz"), quizScreen = quizPanel.querySelector(".screen");
 const thousands = (n) => n.toLocaleString("en");
-// "1642–1651 CE", or "27 BCE–14 CE" across the two
-const fmtSpan = (a, b) => `${a < 0 === b < 0 ? fmt(a).replace(/ \S+$/, "") : fmt(a)}–${fmt(b)}`;
 
 // a title that names a year ("Revolutions of 1848") or any long number gives it away
 const givesAway = (e, year) => /\d{3,}/.test(e.title) || new RegExp(`\\b${Math.abs(year)}\\b`).test(e.title);
@@ -31,32 +30,32 @@ function namesakes() {
   return (e) => { const [a, b] = tops.get(e.title); return !b || (a === e && e.weight >= 2 * b.weight); };
 }
 
-// what to ask about an event: any year from..to scores in full. one that lasted is asked
-// as a whole when its span is short, so that either end would still score half; the best
-// known are asked when they began, and when they ended, instead; and the rest not at all
+// what to ask about an event: always one exact year. one that lasted is asked when it
+// began, and the best known also when they ended
 function questions(e) {
-  if (!e.end) return [{ e, from: e.start, to: e.start }];
-  if (e.end > MAX_YEAR) return [];
-  if (e.weight >= QUIZ_ENDS && e.end - e.start >= 2) return [{ e, from: e.start, to: e.start }, { e, from: e.end, to: e.end, end: true }];
-  return points(e.start, e.end) >= QUIZ_MAX / 2 ? [{ e, from: e.start, to: e.end }] : [];
+  const began = { e, year: e.start };
+  return e.end && e.weight >= QUIZ_ENDS && e.end - e.start >= 2 ? [began, { e, year: e.end, end: true }] : [began];
 }
 
 // well-known events with an exact year, mixed: no more than three of a kind, or of an era,
-// and never both ends of one event
+// and never both ends of one event. the first rounds lean to the best known, and the
+// leaning fades round by round, until the last is as likely to be any of them
 function pickRounds() {
   const unmistakable = namesakes();
-  const pool = state.events.filter((e) => e.start >= MIN_YEAR && e.start <= MAX_YEAR && !e.approx && e.wiki &&
-    (e.curated || e.weight >= QUIZ_WEIGHT) && !e.title.endsWith(" founded") && unmistakable(e))
-    .flatMap(questions).filter((r) => !givesAway(r.e, r.from) && !givesAway(r.e, r.to));
-  for (let i = pool.length - 1; i > 0; i--) { // shuffle
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
+  const pool = state.events.filter((e) => e.start >= MIN_YEAR && !e.approx && e.wiki &&
+    (e.weight >= QUIZ_WEIGHT || e.curated && e.importance < 3) &&
+    !e.title.endsWith(" founded") && unmistakable(e))
+    .flatMap(questions).filter((r) => r.year <= QUIZ_LATEST && !givesAway(r.e, r.year)); // heaviest first (mergeEvents)
   const picks = [];
   const fresh = (r) => !picks.some((p) => p.e === r.e);
-  const room = (r) => picks.filter((p) => p.e.kind === r.e.kind).length < 3 && picks.filter((p) => eraOf(p.from) === eraOf(r.from)).length < 3;
-  for (const r of pool) if (picks.length < QUIZ_ROUNDS && fresh(r) && room(r)) picks.push(r);
-  for (const r of pool) if (picks.length < QUIZ_ROUNDS && fresh(r)) picks.push(r);
+  const room = (r) => picks.filter((p) => p.e.kind === r.e.kind).length < 3 && picks.filter((p) => eraOf(p.year) === eraOf(r.year)).length < 3;
+  for (let i = 0; i < QUIZ_ROUNDS; i++) {
+    const lean = 2 - i / (QUIZ_ROUNDS - 1); // how far toward the top of the pool: 2, about the top quarter, down to 1, anywhere
+    const at = Math.floor(Math.random() ** lean * pool.length);
+    const next = [...pool.slice(at), ...pool.slice(0, at)]; // from there on down
+    const r = next.find((r) => fresh(r) && room(r)) ?? next.find(fresh);
+    if (r) picks.push(r);
+  }
   return picks;
 }
 
@@ -131,7 +130,7 @@ function ask(i) {
   setGuess(1); // each round starts from 1 CE, not wherever the last answer left the timeline
   $("guess-mark").hidden = true;
   render(`${header(r, i)}
-    <p class="hint">${r.end ? "When did it end?" : r.to > r.from ? "When did it happen?" : lasted(r.e) ? "When did it begin?" : "What year was it?"}</p>
+    <p class="hint">${r.end ? "When did it end?" : lasted(r.e) ? "When did it begin?" : "What year was it?"}</p>
     <form class="guess" autocomplete="off">
       <input type="text" enterkeyhint="go" aria-label="your guess, a year (negative for BCE)" maxlength="6">
       <button class="primary" type="submit">Guess</button>
@@ -200,8 +199,7 @@ function syncGuess(year) {
 }
 
 function answer() {
-  const q = state.quiz, r = q.round, { e } = r;
-  const year = clamp(r.guess, r.from, r.to); // the nearest that counts
+  const q = state.quiz, r = q.round, { e, year } = r;
   r.points = points(r.guess, year);
   q.phase = "answer";
   q.asking = false;
@@ -212,8 +210,8 @@ function answer() {
       <p class="points"><b>+${thousands(r.points)}</b> <span>${verdict(r.points)}</span>
         <button class="primary" data-act="${last ? "done" : "next"}">${last ? "Your score" : "Next"}</button></p>
       <div class="meter"><i style="width:${(r.points / QUIZ_MAX) * 100}%"></i></div>
-      <p>${r.end ? `It ended in <b>${fmt(e.end)}</b>, having begun in ${fmt(e.start)}` : r.to > r.from ? `It was <b>${fmtSpan(r.from, r.to)}</b>` : `It was <b>${e.approx ? "c. " : ""}${fmt(e.start)}</b>${e.end ? `, until ${fmt(e.end)}` : ""}`}.
-      ${off ? `You said ${fmt(r.guess)}, ${thousands(off)} year${off === 1 ? "" : "s"} ${r.guess < year ? "early" : "late"}.` : r.to > r.from ? `You said ${fmt(r.guess)}, within it.` : "You got the year exactly."}</p>
+      <p>${r.end ? `It ended in <b>${fmt(e.end)}</b>, having begun in ${fmt(e.start)}` : e.end ? `It began in <b>${fmt(e.start)}</b>, and ended in ${fmt(e.end)}` : `It was <b>${fmt(e.start)}</b>`}.
+      ${off ? `You said ${fmt(r.guess)}, ${thousands(off)} year${off === 1 ? "" : "s"} ${r.guess < year ? "early" : "late"}.` : "You got the year exactly."}</p>
     </div>
     <p class="desc"></p>
     <a class="wiki" target="_blank" rel="noopener" href="">read on wikipedia ↗</a>
@@ -265,7 +263,7 @@ function finish() {
     const li = document.createElement("li"), b = document.createElement("button");
     b.innerHTML = `${kindSvg(r.e.kind)}<span><b></b><small></small></span><em>+${thousands(r.points)}</em>`;
     b.querySelector("b").textContent = r.e.title;
-    b.querySelector("small").textContent = `${r.end ? "ended " : ""}${r.to > r.from ? fmtSpan(r.from, r.to) : fmt(r.from)} · you said ${fmt(r.guess)}`;
+    b.querySelector("small").textContent = `${r.end ? "ended " : ""}${fmt(r.year)} · you said ${fmt(r.guess)}`;
     b.title = "show it on the map";
     b.onclick = () => { endQuiz(); goToEvent(r.e); };
     li.append(b);
