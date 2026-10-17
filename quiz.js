@@ -87,9 +87,14 @@ function showIntro() {
   focusAction();
 }
 
+// games started this visit, which says whether people play again
+let games = 0;
+
 async function start() {
   const list = await loadQuizList();
   if (!state.quiz) return; // closed while it loaded
+  games++;
+  trackEvent("Quiz started", { game: games < 5 ? String(games) : "5+", returning: readBest() > 0 }); // returning: has finished one before
   state.quiz.rounds = pickRounds(list);
   for (const { e } of state.quiz.rounds) summary(e.wiki); // the answers' summaries and pictures, ahead
   ask(0);
@@ -196,6 +201,7 @@ function syncGuess(year) {
 function answer() {
   const q = state.quiz, r = q.round, { e, year } = r;
   r.points = points(r.guess, year);
+  trackEvent("Quiz answer", { question: r.title, verdict: verdict(r.points) }); // which questions are too hard, or too easy
   q.phase = "answer";
   q.asking = false;
   const off = Math.abs(r.guess - year) - (r.guess < 0 !== year < 0 ? 1 : 0); // there's no year 0
@@ -213,6 +219,7 @@ function answer() {
   </div>`);
   fillHeader(r);
   quizScreen.querySelector(".wiki").href = e.wiki;
+  quizScreen.querySelector(".wiki").onclick = () => trackEvent("Quiz read more", { via: "wikipedia" });
   summary(e.wiki).then((s) => {
     if (state.quiz?.round === r && s?.type === "standard") quizScreen.querySelector(".desc").textContent = s.extract;
   });
@@ -240,6 +247,8 @@ function sweep(from, to, ms = 900) {
 function finish() {
   const q = state.quiz, score = total(), best = readBest(), record = score > best;
   if (record) saveBest(score);
+  const band = Math.min(Math.floor(score / 1000), 9) * 1000;
+  trackEvent("Quiz finished", { score: `${thousands(band)}–${thousands(band + 999)}`, best: record });
   q.phase = "done";
   state.selected = null;
   setPlain(false);
@@ -260,7 +269,7 @@ function finish() {
     b.querySelector("b").textContent = r.title;
     b.querySelector("small").textContent = `${r.end ? "ended " : ""}${fmt(r.year)} · you said ${fmt(r.guess)}`;
     b.title = "show it on the map";
-    b.onclick = () => { endQuiz(); goToEvent(r.e); };
+    b.onclick = () => { trackEvent("Quiz read more", { via: "map" }); endQuiz(); goToEvent(r.e); };
     li.append(b);
     return li;
   }));
@@ -294,12 +303,15 @@ function openQuiz() {
   quizPanel.hidden = false;
   quizPanel.animate([{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }], { duration: 280, easing: "ease-out" });
   resize(); // a phone makes room for the panel
+  trackEvent("Quiz opened");
   showIntro();
   loadQuizList().catch(() => {}); // ahead of start
 }
 
 function endQuiz() {
   if (!state.quiz) return;
+  const { phase, i } = state.quiz;
+  if (phase === "ask" || phase === "answer") trackEvent("Quiz left", { round: i + 1, phase }); // where people give up
   state.quiz = null;
   state.selected = null;
   setPlain(false);

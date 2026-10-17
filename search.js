@@ -75,7 +75,7 @@ function showResults() {
     li.innerHTML = `${kindSvg(e.kind)}<span><b></b><small></small></span>`;
     li.querySelector("b").append(...marked(e.title, e.key, tokens));
     li.querySelector("small").textContent = `${e.approx ? "c. " : ""}${when} · ${e.kind}`;
-    li.onclick = () => goToEvent(e);
+    li.onclick = () => pick(e);
     li.onpointermove = () => activate(i);
     return li;
   }) : [Object.assign(document.createElement("li"), { className: "none", textContent: "no events match" })]));
@@ -99,6 +99,12 @@ function closeResults() {
   resultList.hidden = true;
   searchInput.setAttribute("aria-expanded", false);
   searchInput.removeAttribute("aria-activedescendant");
+}
+
+// a result chosen: which event is counted, never what was typed
+function pick(e) {
+  trackEvent("Search", { event: e.title, kind: e.kind });
+  goToEvent(e);
 }
 
 // leave whatever was playing, go to the year, fly there and open the card
@@ -126,7 +132,7 @@ searchInput.addEventListener("keydown", (ev) => {
     else activate(chosen + (ev.key === "ArrowDown" ? 1 : -1));
   } else if (ev.key === "Enter") {
     ev.preventDefault();
-    if (found[chosen]) goToEvent(found[chosen].e);
+    if (found[chosen]) pick(found[chosen].e);
   } else if (ev.key === "Escape") {
     ev.preventDefault();
     if (searchInput.value) { searchInput.value = ""; closeResults(); }

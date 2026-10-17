@@ -184,7 +184,21 @@ which wikidata classes are pulled, and how many wikipedia editions an event need
 
 ## deploy
 
-it's a static site, so any static host works. on vercel, import the repo and accept the defaults (or run `npx vercel`). `vercel.json` sets cache headers, and `.vercelignore` leaves the pipeline out of the upload. page views are counted with [vercel web analytics](https://vercel.com/docs/analytics) (cookieless, no personal data), turned on under the project's analytics tab; running locally or on another host, the script just isn't there.
+it's a static site, so any static host works. on vercel, import the repo and accept the defaults (or run `npx vercel`). `vercel.json` sets cache headers, and `.vercelignore` leaves the pipeline out of the upload. page views are counted with [vercel web analytics](https://vercel.com/docs/analytics) (cookieless, no personal data), turned on under the project's analytics tab; running locally or on another host, the script just isn't there. on a pro plan it also counts a few custom events (`trackEvent` in `app.js`), each with at most two properties and never anything typed:
+
+| event | properties | |
+|---|---|---|
+| `Play` | `era` | playback started |
+| `Explore` | `focus`, `group` | a topic or region chosen |
+| `Search` | `event`, `kind` | a search result chosen (not the search itself) |
+| `View` | `view` | switched to the globe or the flat map |
+| `Contribute` | | the github link |
+| `Quiz opened` | | |
+| `Quiz started` | `game` (this visit: 1, 2… 5+), `returning` (has finished one before) | |
+| `Quiz answer` | `question`, `verdict` (spot on … way off) | one a round: which questions are too hard or too easy |
+| `Quiz finished` | `score` (in thousands), `best` (a new best) | |
+| `Quiz left` | `round`, `phase` | closed partway through |
+| `Quiz read more` | `via` (wikipedia or the map) | |
 
 ## license
 

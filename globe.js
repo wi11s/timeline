@@ -312,9 +312,14 @@ function setGlobe(on) {
   viewChanged();
 }
 
-globeToggle.onclick = () => setGlobe(!globe.on);
+// switched by hand (the button or g), which is counted
+function toggleGlobe() {
+  trackEvent("View", { view: globe.on ? "flat map" : "globe" });
+  setGlobe(!globe.on);
+}
+globeToggle.onclick = toggleGlobe;
 addEventListener("keydown", (ev) => {
-  if (ev.key === "g" && !ev.metaKey && !ev.ctrlKey && !(ev.target instanceof HTMLInputElement)) setGlobe(!globe.on);
+  if (ev.key === "g" && !ev.metaKey && !ev.ctrlKey && !(ev.target instanceof HTMLInputElement)) toggleGlobe();
 });
 
 // called by app.js once the map is set up: it always opens on the globe

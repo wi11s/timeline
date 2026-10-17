@@ -112,7 +112,7 @@ fetch("data/focuses.json").then((r) => r.json()).then((list) => {
       b.querySelector("b").textContent = f.title;
       b.querySelector("small").textContent = `${fmt(f.from)} – ${f.to >= MAX_YEAR ? "today" : fmt(f.to)}`;
       b.querySelector("span").textContent = f.blurb;
-      b.onclick = () => startFocus(f);
+      b.onclick = () => { trackEvent("Explore", { focus: f.title, group: f.group }); startFocus(f); };
       li.append(b);
       return li;
     }));

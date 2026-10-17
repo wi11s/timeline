@@ -111,6 +111,9 @@ FIXES = {
     "Q79961": {"start": 1931},
     # the label had been vandalised ("Driving car"); the article is the battle of samarra, 363
     "Q1231697": {"title": "Battle of Samarra"},
+    # history.com, "Mohamed Bouazizi self-immolates, sparking Arab Spring": sidi bouzid, tunisia,
+    # 17 december 2010 (wikidata: the middle of the countries it reached, in chad)
+    "Q33761": {"lat": 35.04, "lon": 9.49},
 }
 
 # everything over the minimum, plus older events over the lowest era threshold, plus

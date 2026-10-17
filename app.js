@@ -28,6 +28,10 @@ const canvas = document.getElementById("map");
 const ctx = canvas.getContext("2d");
 const $ = (id) => document.getElementById(id);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+// a custom event for vercel web analytics: what people do, never who they are or what they
+// typed. at most two properties (the pro plan's limit); off vercel, or on a plan without
+// custom events, they go nowhere. the snippet in index.html queues them until its script loads
+const trackEvent = (name, data) => { try { window.va?.("event", data ? { name, data } : { name }); } catch {} };
 
 const state = {
   year: 1453,
@@ -1382,7 +1386,13 @@ function stepPlay(dt) {
   return state.playing;
 }
 
-$("play").onclick = () => setPlaying(!state.playing);
+// play or pause, as asked for (the button or space): playback starting is counted
+function togglePlay() {
+  if (!state.playing && !state.quiz) trackEvent("Play", { era: eraOf(state.year).name });
+  setPlaying(!state.playing);
+}
+$("play").onclick = togglePlay;
+$("contribute").addEventListener("click", () => trackEvent("Contribute"));
 $("speed").onclick = () => {
   state.speed = SPEEDS[(SPEEDS.indexOf(state.speed) + 1) % SPEEDS.length];
   $("speed").textContent = `${state.speed}×`;
@@ -1527,7 +1537,7 @@ document.querySelector("footer").addEventListener("wheel", (ev) => {
 addEventListener("keydown", (ev) => {
   if (ev.key === " " && !(ev.target instanceof HTMLButtonElement)) {
     ev.preventDefault();
-    return setPlaying(!state.playing);
+    return togglePlay();
   }
   if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
   const dir = ev.key === "ArrowRight" ? 1 : -1;
