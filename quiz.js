@@ -1,19 +1,24 @@
 // world timeline: the quiz. ten events, one at a time: set the timeline to the year you
 // think each happened (or type it) and guess. the closer, the more points, up to 1,000 a
 // round; the map shows where each happened, and the answer jumps the timeline there.
-// the best score, and the events lately asked about, are kept in this browser (localStorage)
+// the best score is kept in this browser (localStorage)
 
 const QUIZ_ROUNDS = 10, QUIZ_MAX = 1000;
 const QUIZ_WEIGHT = 30;     // what an event needs to be asked about (the hand-picked ones always can)
 const QUIZ_STRIP = 262;     // the panel's greatest height on a phone, which the map makes room for (mapArea)
-const QUIZ_MEMORY = 1000;   // how many of the last events asked about to leave out
-const BEST_KEY = "quiz-best", SEEN_KEY = "quiz-seen";
+const QUIZ_ENDS = 100;      // what an event that lasted needs for its end to be asked about too
+const BEST_KEY = "quiz-best";
 
 const quizPanel = $("quiz"), quizScreen = quizPanel.querySelector(".screen");
 const thousands = (n) => n.toLocaleString("en");
+// "1642–1651 CE", or "27 BCE–14 CE" across the two
+const fmtSpan = (a, b) => `${a < 0 === b < 0 ? fmt(a).replace(/ \S+$/, "") : fmt(a)}–${fmt(b)}`;
 
 // a title that names a year ("Revolutions of 1848") or any long number gives it away
-const givesAway = (e) => /\d{3,}/.test(e.title) || new RegExp(`\\b${Math.abs(e.start)}\\b`).test(e.title);
+const givesAway = (e, year) => /\d{3,}/.test(e.title) || new RegExp(`\\b${Math.abs(year)}\\b`).test(e.title);
+
+// things that lasted, though only their start is known ("Hallstatt culture"): their year is when they began
+const lasted = (e) => e.end || /\b(culture|civili[sz]ation|period|age|revolution|renaissance|reformation|movement)$/i.test(e.title);
 
 // a title shared with other events ("Siege of Jerusalem") is only fair to ask about when one
 // of them is far better known (thermopylae in 480 BCE): the heaviest two of each title
@@ -26,22 +31,32 @@ function namesakes() {
   return (e) => { const [a, b] = tops.get(e.title); return !b || (a === e && e.weight >= 2 * b.weight); };
 }
 
-// well-known events with an exact year, not asked about lately, mixed: no more than three
-// of a kind, or of an era
+// what to ask about an event: any year from..to scores in full. one that lasted is asked
+// as a whole when its span is short, so that either end would still score half; the best
+// known are asked when they began, and when they ended, instead; and the rest not at all
+function questions(e) {
+  if (!e.end) return [{ e, from: e.start, to: e.start }];
+  if (e.end > MAX_YEAR) return [];
+  if (e.weight >= QUIZ_ENDS && e.end - e.start >= 2) return [{ e, from: e.start, to: e.start }, { e, from: e.end, to: e.end, end: true }];
+  return points(e.start, e.end) >= QUIZ_MAX / 2 ? [{ e, from: e.start, to: e.end }] : [];
+}
+
+// well-known events with an exact year, mixed: no more than three of a kind, or of an era,
+// and never both ends of one event
 function pickRounds() {
   const unmistakable = namesakes();
-  const all = state.events.filter((e) => e.start >= MIN_YEAR && e.start <= MAX_YEAR && !e.approx && e.wiki &&
-    (e.curated || e.weight >= QUIZ_WEIGHT) && !e.title.endsWith(" founded") && !givesAway(e) && unmistakable(e));
-  const seen = new Set(readSeen()), fresh = all.filter((e) => !seen.has(e.id));
-  const pool = fresh.length >= 10 * QUIZ_ROUNDS ? fresh : all; // all of them again, once nearly all have been
+  const pool = state.events.filter((e) => e.start >= MIN_YEAR && e.start <= MAX_YEAR && !e.approx && e.wiki &&
+    (e.curated || e.weight >= QUIZ_WEIGHT) && !e.title.endsWith(" founded") && unmistakable(e))
+    .flatMap(questions).filter((r) => !givesAway(r.e, r.from) && !givesAway(r.e, r.to));
   for (let i = pool.length - 1; i > 0; i--) { // shuffle
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
   const picks = [];
-  const room = (e) => picks.filter((p) => p.kind === e.kind).length < 3 && picks.filter((p) => eraOf(p.start) === eraOf(e.start)).length < 3;
-  for (const e of pool) if (picks.length < QUIZ_ROUNDS && room(e)) picks.push(e);
-  for (const e of pool) if (picks.length < QUIZ_ROUNDS && !picks.includes(e)) picks.push(e);
+  const fresh = (r) => !picks.some((p) => p.e === r.e);
+  const room = (r) => picks.filter((p) => p.e.kind === r.e.kind).length < 3 && picks.filter((p) => eraOf(p.from) === eraOf(r.from)).length < 3;
+  for (const r of pool) if (picks.length < QUIZ_ROUNDS && fresh(r) && room(r)) picks.push(r);
+  for (const r of pool) if (picks.length < QUIZ_ROUNDS && fresh(r)) picks.push(r);
   return picks;
 }
 
@@ -56,13 +71,6 @@ function readBest() {
 }
 function saveBest(score) {
   try { localStorage.setItem(BEST_KEY, String(score)); } catch {}
-}
-function readSeen() {
-  try { return JSON.parse(localStorage.getItem(SEEN_KEY)) || []; } catch { return []; }
-}
-function saveSeen(events) {
-  const ids = [...readSeen(), ...events.map((e) => e.id)].slice(-QUIZ_MEMORY);
-  try { localStorage.setItem(SEEN_KEY, JSON.stringify(ids)); } catch {}
 }
 
 // --- screens -------------------------------------------------------------------------
@@ -88,9 +96,7 @@ function showIntro() {
 }
 
 function start() {
-  const picks = pickRounds();
-  saveSeen(picks);
-  state.quiz.rounds = picks.map((e) => ({ e }));
+  state.quiz.rounds = pickRounds();
   for (const { e } of state.quiz.rounds) summary(e.wiki); // the answers' summaries and pictures, ahead
   ask(0);
 }
@@ -125,7 +131,7 @@ function ask(i) {
   setGuess(1); // each round starts from 1 CE, not wherever the last answer left the timeline
   $("guess-mark").hidden = true;
   render(`${header(r, i)}
-    <p class="hint">${r.e.end ? "When did it begin?" : "What year was it?"}</p>
+    <p class="hint">${r.end ? "When did it end?" : r.to > r.from ? "When did it happen?" : lasted(r.e) ? "When did it begin?" : "What year was it?"}</p>
     <form class="guess" autocomplete="off">
       <input type="text" enterkeyhint="go" aria-label="your guess, a year (negative for BCE)" maxlength="6">
       <button class="primary" type="submit">Guess</button>
@@ -195,18 +201,19 @@ function syncGuess(year) {
 
 function answer() {
   const q = state.quiz, r = q.round, { e } = r;
-  r.points = points(r.guess, e.start);
+  const year = clamp(r.guess, r.from, r.to); // the nearest that counts
+  r.points = points(r.guess, year);
   q.phase = "answer";
   q.asking = false;
-  const off = Math.abs(r.guess - e.start) - (r.guess < 0 !== e.start < 0 ? 1 : 0); // there's no year 0
+  const off = Math.abs(r.guess - year) - (r.guess < 0 !== year < 0 ? 1 : 0); // there's no year 0
   const last = q.i === q.rounds.length - 1;
   render(`${header(r, q.i, true)}
     <div class="result">
       <p class="points"><b>+${thousands(r.points)}</b> <span>${verdict(r.points)}</span>
         <button class="primary" data-act="${last ? "done" : "next"}">${last ? "Your score" : "Next"}</button></p>
       <div class="meter"><i style="width:${(r.points / QUIZ_MAX) * 100}%"></i></div>
-      <p>It was <b>${e.approx ? "c. " : ""}${fmt(e.start)}</b>${e.end ? `, until ${fmt(e.end)}` : ""}.
-      ${off ? `You said ${fmt(r.guess)}, ${thousands(off)} year${off === 1 ? "" : "s"} ${r.guess < e.start ? "early" : "late"}.` : "You got the year exactly."}</p>
+      <p>${r.end ? `It ended in <b>${fmt(e.end)}</b>, having begun in ${fmt(e.start)}` : r.to > r.from ? `It was <b>${fmtSpan(r.from, r.to)}</b>` : `It was <b>${e.approx ? "c. " : ""}${fmt(e.start)}</b>${e.end ? `, until ${fmt(e.end)}` : ""}`}.
+      ${off ? `You said ${fmt(r.guess)}, ${thousands(off)} year${off === 1 ? "" : "s"} ${r.guess < year ? "early" : "late"}.` : r.to > r.from ? `You said ${fmt(r.guess)}, within it.` : "You got the year exactly."}</p>
     </div>
     <p class="desc"></p>
     <a class="wiki" target="_blank" rel="noopener" href="">read on wikipedia ↗</a>
@@ -220,7 +227,7 @@ function answer() {
   const mark = $("guess-mark");
   mark.style.left = `${toPos(r.guess) * 100}%`;
   mark.hidden = false;
-  sweep(r.guess, e.start);
+  sweep(r.guess, year);
   focusAction();
 }
 
@@ -258,7 +265,7 @@ function finish() {
     const li = document.createElement("li"), b = document.createElement("button");
     b.innerHTML = `${kindSvg(r.e.kind)}<span><b></b><small></small></span><em>+${thousands(r.points)}</em>`;
     b.querySelector("b").textContent = r.e.title;
-    b.querySelector("small").textContent = `${fmt(r.e.start)} · you said ${fmt(r.guess)}`;
+    b.querySelector("small").textContent = `${r.end ? "ended " : ""}${r.to > r.from ? fmtSpan(r.from, r.to) : fmt(r.from)} · you said ${fmt(r.guess)}`;
     b.title = "show it on the map";
     b.onclick = () => { endQuiz(); goToEvent(r.e); };
     li.append(b);
