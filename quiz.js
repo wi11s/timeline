@@ -52,10 +52,14 @@ function pickRounds(list) {
 // how close, on the timeline's own scale (lg, in app.js): the more recent the event, the
 // nearer you need to be, so a year or two off costs about as much for the iphone as a
 // century for the pyramids. and the older the date, the wider the margin on top, growing
-// smoothly towards half as wide again: few people know the middle ages to the decade
+// smoothly towards half as wide again: few people know the middle ages to the decade. but
+// centuries off cost plenty however old the date: the years off count too, barely within a
+// few decades, and taking most of the points at a few hundred, a little more the older the
+// date (about 210 years for the 1800s, 285 for classical greece, 355 for the pyramids)
 const points = (guess, year) => {
   const age = PRESENT - year, margin = 0.15 * (1 + 0.5 * age / (age + 600));
-  return Math.round(QUIZ_MAX * Math.exp(-Math.abs(lg(guess) - lg(year)) / margin));
+  const off = (guess - year) / (200 + age / 30);
+  return Math.round(QUIZ_MAX * Math.exp(-Math.abs(lg(guess) - lg(year)) / margin - off * off));
 };
 const verdict = (p) => (p >= 950 ? "Spot on" : p >= 750 ? "Very close" : p >= 450 ? "Close" : p >= 150 ? "Not far" : "Way off");
 
