@@ -1,13 +1,13 @@
 // world timeline: the quiz. ten events, one at a time: set the timeline to the year you
 // think each happened (or type it) and guess. the closer, the more points, up to 1,000 a
 // round; the map shows where each happened, and the answer jumps the timeline there.
-// the best score is kept in this browser (localStorage)
+// the best score, and the events lately asked about, are kept in this browser (localStorage)
 
 const QUIZ_ROUNDS = 10, QUIZ_MAX = 1000;
-const QUIZ_WEIGHT = 100;    // what an event needs to be asked about (the hand-picked ones always can)
-const QUIZ_HORIZON = 2150;  // closeness is measured in log-years before this (see points)
+const QUIZ_WEIGHT = 30;     // what an event needs to be asked about (the hand-picked ones always can)
 const QUIZ_STRIP = 262;     // the panel's greatest height on a phone, which the map makes room for (mapArea)
-const BEST_KEY = "quiz-best";
+const QUIZ_MEMORY = 1000;   // how many of the last events asked about to leave out
+const BEST_KEY = "quiz-best", SEEN_KEY = "quiz-seen";
 
 const quizPanel = $("quiz"), quizScreen = quizPanel.querySelector(".screen");
 const thousands = (n) => n.toLocaleString("en");
@@ -15,10 +15,25 @@ const thousands = (n) => n.toLocaleString("en");
 // a title that names a year ("Revolutions of 1848") or any long number gives it away
 const givesAway = (e) => /\d{3,}/.test(e.title) || new RegExp(`\\b${Math.abs(e.start)}\\b`).test(e.title);
 
-// well-known events with an exact year, mixed: no more than three of a kind, or of an era
+// a title shared with other events ("Siege of Jerusalem") is only fair to ask about when one
+// of them is far better known (thermopylae in 480 BCE): the heaviest two of each title
+function namesakes() {
+  const tops = new Map();
+  for (const e of state.events) { // heaviest first (mergeEvents)
+    const t = tops.get(e.title) ?? [];
+    if (t.length < 2) tops.set(e.title, [...t, e]);
+  }
+  return (e) => { const [a, b] = tops.get(e.title); return !b || (a === e && e.weight >= 2 * b.weight); };
+}
+
+// well-known events with an exact year, not asked about lately, mixed: no more than three
+// of a kind, or of an era
 function pickRounds() {
-  const pool = state.events.filter((e) => e.start >= MIN_YEAR && e.start <= MAX_YEAR && !e.approx && e.wiki &&
-    (e.curated || e.weight >= QUIZ_WEIGHT) && !e.title.endsWith(" founded") && !givesAway(e));
+  const unmistakable = namesakes();
+  const all = state.events.filter((e) => e.start >= MIN_YEAR && e.start <= MAX_YEAR && !e.approx && e.wiki &&
+    (e.curated || e.weight >= QUIZ_WEIGHT) && !e.title.endsWith(" founded") && !givesAway(e) && unmistakable(e));
+  const seen = new Set(readSeen()), fresh = all.filter((e) => !seen.has(e.id));
+  const pool = fresh.length >= 10 * QUIZ_ROUNDS ? fresh : all; // all of them again, once nearly all have been
   for (let i = pool.length - 1; i > 0; i--) { // shuffle
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -30,9 +45,10 @@ function pickRounds() {
   return picks;
 }
 
-// how close, in log-years before QUIZ_HORIZON: being a few years off costs about as much
-// for the iphone as a few decades for the pyramids
-const points = (guess, year) => Math.round(QUIZ_MAX * Math.exp(-Math.abs(Math.log(QUIZ_HORIZON - guess) - Math.log(QUIZ_HORIZON - year)) / 0.15));
+// how close, on the timeline's own scale (lg, in app.js): the more recent the event, the
+// nearer you need to be, so a year or two off costs about as much for the iphone as a
+// century for the pyramids
+const points = (guess, year) => Math.round(QUIZ_MAX * Math.exp(-Math.abs(lg(guess) - lg(year)) / 0.15));
 const verdict = (p) => (p >= 950 ? "Spot on" : p >= 750 ? "Very close" : p >= 450 ? "Close" : p >= 150 ? "Not far" : "Way off");
 
 function readBest() {
@@ -40,6 +56,13 @@ function readBest() {
 }
 function saveBest(score) {
   try { localStorage.setItem(BEST_KEY, String(score)); } catch {}
+}
+function readSeen() {
+  try { return JSON.parse(localStorage.getItem(SEEN_KEY)) || []; } catch { return []; }
+}
+function saveSeen(events) {
+  const ids = [...readSeen(), ...events.map((e) => e.id)].slice(-QUIZ_MEMORY);
+  try { localStorage.setItem(SEEN_KEY, JSON.stringify(ids)); } catch {}
 }
 
 // --- screens -------------------------------------------------------------------------
@@ -65,7 +88,9 @@ function showIntro() {
 }
 
 function start() {
-  state.quiz.rounds = pickRounds().map((e) => ({ e }));
+  const picks = pickRounds();
+  saveSeen(picks);
+  state.quiz.rounds = picks.map((e) => ({ e }));
   for (const { e } of state.quiz.rounds) summary(e.wiki); // the answers' summaries and pictures, ahead
   ask(0);
 }
